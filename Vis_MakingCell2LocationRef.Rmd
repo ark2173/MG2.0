@@ -1,0 +1,121 @@
+---
+title: "Making Custom Reference for Cell2Location"
+author: "Alina Kline-Schoder"
+date: "8/16/2022"
+output: 
+    github_document:
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+library(Seurat)
+library(ggplot2)
+setwd('/media/alina/Backup1/Papers/MG2.0/Data/RData/')
+load("Seq1-Microglia.RData")
+```
+
+# subsetting IAM
+```{r}
+Idents(Microglia)<-"seurat_clusters"
+IAM<-subset(Microglia,idents="4")
+```
+
+# subsetting to get only 200 or less per cluster
+```{r}
+library(dplyr)
+NoIAM<-subset(Microglia,idents="4",invert=T)
+Mat<-as.data.frame(NoIAM$seurat_clusters)
+colnames(Mat)<-c("Type")
+Mat$Cell<-rownames(Mat)
+
+#types with less than 200
+tab<-as.data.frame(table(NoIAM$seurat_clusters))
+TooLow<-tab[tab$Freq<200,]$Var1
+
+Cells2Low<-Mat[(Mat$Type %in% TooLow),]
+Mat_NoTooLow<-Mat[!(Mat$Type %in% TooLow),]
+Mat_sub<-Mat_NoTooLow %>%
+  group_by(Type) %>%
+  sample_n(200)
+
+Cells2Keep<-c(Mat_sub$Cell,Cells2Low$Cell)
+```
+
+# shared genes with visium
+```{r}
+setwd('/media/alina/Backup1/Papers/MG2.0/Data/RData/')
+load("Vis1-LoadingVisCell2Location.RData")
+DefaultAssay(NoIAM)<-"RNA"
+Tax<-NoIAM$seurat_clusters
+NCounts=NoIAM$nCount_RNA
+Meta_AK<-data.frame(Cell=Cells2Keep,Tax=Tax[Cells2Keep],nCount=NCounts[Cells2Keep],Experiment="AKS")
+```
+
+# Loading in Linnarson et al eference
+```{r}
+library(SeuratDisk)
+Loom <- as.Seurat(Connect(filename = "/media/alina/Backup1/Papers/MG2.0/Data/ReferenceData/l6_r4.loom", mode = "r"))
+DefaultAssay(Microglia)<-"RNA"
+Shared_genes=intersect(intersect(rownames(brain.merge),rownames(Loom)),rownames(Microglia))
+Counts_AK<-Microglia@assays$RNA@counts[Shared_genes,Cells2Keep]
+```
+
+```{r}
+Mat<-as.data.frame(Loom$TaxonomyRank4)
+colnames(Mat)<-c("Type")
+Mat$Cell<-rownames(Mat)
+
+#types with less than 200
+tab<-as.data.frame(table(Loom$TaxonomyRank4))
+TooLow<-tab[tab$Freq<200,]$Var1
+
+Cells2Low<-Mat[(Mat$Type %in% TooLow),]
+Mat_NoTooLow<-Mat[!(Mat$Type %in% TooLow),]
+Mat_sub<-Mat_NoTooLow %>%
+  group_by(Type) %>%
+  sample_n(200)
+
+Cells2Keep<-c(Mat_sub$Cell,Cells2Low$Cell)
+DefaultAssay(Loom)<-"RNA"
+Counts_Loom<-Loom@assays$RNA@counts[Shared_genes,Cells2Keep]
+Tax<-Loom$TaxonomyRank4
+NCounts<-Loom$nCount_RNA
+Meta_Loom<-data.frame(Cell=Cells2Keep,Tax=Tax[Cells2Keep],nCount=NCounts[Cells2Keep],Experiment="Linnarsson")
+```
+
+# Adding in IAM subclusters
+```{r}
+Counts_IAM<-IAM@assays$RNA@counts[Shared_genes,]
+
+DefaultAssay(IAM)<-"RNA"
+Tax<-IAM$seurat_clusters_Sep
+NCounts=IAM$nCount_RNA
+Meta_AK_IAM<-data.frame(Cell=colnames(IAM),Tax=Tax,nCount=NCounts,Experiment="AKS")
+```
+
+
+# IAM not separated
+```{r}
+Meta_Combo<-Meta_AK_IAM
+Meta_Combo$Tax<-4
+
+CountsFull<-cbind(Counts_AK,Counts_Loom,Counts_IAM)
+MetaFull<-rbind(Meta_AK,Meta_Loom,Meta_Combo)
+
+write.csv(t(as.matrix(CountsFull)),"/media/alina/Backup1/Papers/MG2.0/Data/RData/Linnarsson_AKCountsMatrix.csv")
+write.csv(MetaFull,"/media/alina/Backup1/Papers/MG2.0/Data/RData/Linnarsson_AKMetaMatrix.csv")
+```
+
+
+# IAM Separated
+```{r}
+CountsFull<-cbind(Counts_AK,Counts_Loom,Counts_IAM)
+MetaFull<-rbind(Meta_AK,Meta_Loom,Meta_AK_IAM)
+
+write.csv(t(as.matrix(CountsFull)),"/media/alina/Backup1/Papers/MG2.0/Data/RData/Linnarsson_AKCountsMatrix_IAM.csv")
+write.csv(MetaFull,"/media/alina/Backup1/Papers/MG2.0/Data/RData/Linnarsson_AKMetaMatrix_IAM.csv")
+```
+
+
+
+

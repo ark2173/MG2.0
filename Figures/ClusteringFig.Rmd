@@ -1,0 +1,139 @@
+---
+title: "4-Clustering microglia"
+author: "Alina Kline-Schoder"
+date: "8/16/2022"
+output: 
+    github_document
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+library(Seurat)
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+library(ComplexHeatmap)
+ColorsGroup<-c("#FFFFFF","#FEC5BB","#98BDAA","#F9AC4D")
+ColorsClusters<-c("#54478c", # purple
+                  "#2c699a",
+                  "#0db39e", # green
+                  "#16db93", # green
+                  "#efea5a", # yellow
+                  "#f1c453",
+                  "#f29e4c")
+#setwd('D:/Scripts/R/2022_SavedData/')
+setwd("/Users/alinakline-schoder/Desktop/")
+load("3-Microglia.rdata")
+Microglia$Treatment<-factor(Microglia$Treatment,levels = c("Naive","FUS+MB","FUS-BBBO","FUS"))
+Microglia$Full<-factor(Microglia$Full,levels=c("WT Naive","AD Naive",
+                                               "WT FUS+MB","AD FUS+MB",
+                                               "WT FUS-BBBO","AD FUS-BBBO",
+                                               "WT FUS","AD FUS"))
+col_fun = colorRamp2(c(-2, 0, 2), c("blue", "#D3D3D3", "red"))
+library(ggnewscale)
+```
+
+# PCA
+```{r}
+DefaultAssay(Microglia) <- "integrated"
+Microglia <- ScaleData(Microglia, verbose = FALSE)
+Microglia <- RunPCA(Microglia, npcs = 50, verbose = FALSE)
+```
+
+# Clustering
+```{r}
+Microglia <- RunUMAP(Microglia, reduction = "pca", dims = 1:15)
+Microglia <- FindNeighbors(Microglia, dims = 1:15)
+Microglia <- FindClusters(Microglia, resolution = 0.5)
+UMAP<-DimPlot(Microglia,group.by = "seurat_clusters",label=T,cols=ColorsClusters,label.box = T)+theme(legend.position = "none",plot.title = element_blank())
+```
+
+```{r}
+tab<-as.data.frame(table(Microglia$Full,Microglia$seurat_clusters))
+tot<-as.data.frame(table(Microglia$Full))
+tab$Freq_Norm<-tab$Freq/tot[tab$Var1,]$Freq*100
+tab$Genotype<-recode(tab$Var1,"WT Naive"="WT","AD Naive"="AD","WT FUS"="WT","AD FUS"="AD","WT FUS+MB"="WT","AD FUS+MB"="AD","WT FUS-BBBO"="WT","AD FUS-BBBO"="AD")
+tab$Treatment<-recode(tab$Var1,"WT Naive"="Naive","AD Naive"="Naive","WT FUS"="FUS","AD FUS"="FUS","WT FUS+MB"="FUS+MB","AD FUS+MB"="FUS+MB","WT FUS-BBBO"="FUS-BBBO","AD FUS-BBBO"="FUS-BBBO")
+
+levels(tab$Var1)
+
+#WT
+tabWT<-tab[tab$Genotype=="WT",]
+tabAD<-tab[tab$Genotype=="AD",]
+
+BarPlot1<-ggplot(tabWT,aes(x=Freq_Norm,y=Treatment))+geom_bar(stat="identity",aes(fill=Var2),position = position_stack(reverse = TRUE))+scale_fill_manual(values=ColorsClusters)+scale_y_discrete(expand = c(0,0))+new_scale_fill()+geom_tile(aes(y=Treatment,x=-3,fill=Treatment),width=5,color="black")+scale_fill_manual(values=ColorsGroup)+facet_grid(Genotype~.)+theme_bw()+xlab("Cluster (%)")+theme(legend.position = "none",axis.title.y = element_blank(),axis.text.x = element_blank(),axis.title.x = element_blank())+scale_x_continuous(expand = c(0,0))+theme(strip.background = element_rect(fill=c("white")))
+
+Barplot2<-ggplot(tabAD,aes(x=Freq_Norm,y=Treatment))+geom_bar(stat="identity",aes(fill=Var2),position = position_stack(reverse = TRUE))+scale_fill_manual(values=ColorsClusters)+scale_y_discrete(expand = c(0,0))+new_scale_fill()+geom_tile(aes(y=Treatment,x=-3,fill=Treatment),width=5,color="black")+scale_fill_manual(values=ColorsGroup)+facet_grid(Genotype~.)+theme_bw()+xlab("Cluster (%)")+theme(legend.position = "none",axis.title.y = element_blank())+scale_x_continuous(expand = c(0,0))+theme(strip.background = element_rect(fill="white"))
+
+```
+
+
+
+```{r}
+Idents(Microglia)<-"seurat_clusters"
+AllMark<-FindAllMarkers(Microglia,only.pos = T)
+AllMark$pct.dif<-AllMark$pct.1-AllMark$pct.2
+Genes2Plot<-AllMark%>%
+    group_by(cluster) %>%
+    top_n(n = 5, wt = pct.dif)
+Genes2Plot<-unique(Genes2Plot$gene)
+Idents(Microglia)<-"seurat_clusters"
+Sub<-subset(Microglia,downsample=200)
+#Genes2Plot<-c("P2ry12","Cx3cr1","Aif1","Ccl3","Ccl4","Fos","Mki67","Top2a","Ifi30")
+Data<-t(as.matrix(Sub@assays$RNA@data[Genes2Plot,]))
+Data<-cbind(as.data.frame(Data),Sub$seurat_clusters,Sub$Treatment,Sub$Genotype)
+colnames(Data)[dim(Data)[2]-2]<-"Cluster"
+colnames(Data)[dim(Data)[2]-1]<-"Treatment"
+colnames(Data)[dim(Data)[2]]<-"Genotype"
+
+Data$Genotype<-factor(Data$Genotype,levels=c("WT","AD"))
+Data<-Data[order(Data$Cluster,Data$Treatment,Data$Genotype),]
+Treatment<-Data$Treatment
+Cluster<-Data$Cluster
+Genotype<-Data$Genotype
+Data<-Data[,1:(dim(Data)[2]-3)]
+Data<-Seurat::ScaleData(t(as.matrix(Data)))
+ColorsGroup<-c("#FFFFFF","#FEC5BB","#98BDAA","#F9AC4D")
+
+col_ha=HeatmapAnnotation(Cluster=Cluster,Treat=Treatment,col=list(
+  Treat=c("Naive"="#FFFFFF",
+          "FUS"="#F9AC4D",
+          "FUS+MB"="#FEC5BB",
+          "FUS-BBBO"="#98BDAA"),Cluster=c("0"="#54478c",
+                                          "1"="#2c699a",
+                                          "2"="#0db39e",
+                                          "3"="#16db93",
+                                          "4"="#efea5a",
+                                          "5"="#f1c453",
+                                          "6"="#f29e4c"),
+  Genotype=c("WT"="#1D8DE6","AD"="#F1515E")),show_legend = F,show_annotation_name = F,border=T)
+
+HM<-Heatmap(Data,
+            cluster_rows = FALSE,
+            cluster_columns = FALSE,
+            show_row_names = TRUE,
+            show_column_names = FALSE,
+            row_names_side = "left",
+            top_annotation = col_ha,
+            col=col_fun,
+            row_names_gp = gpar(fontsize=8,family="Arial"),
+            row_split = AllMark[Genes2Plot,]$cluster,
+            column_split = Cluster,
+            column_title_gp = gpar(fontsize=8,family="Arial"),
+            row_title =" ",
+        heatmap_legend_param = list(title="Expression ",title_gp=gpar(fontsize=8,family="Arial"),labels_gp=gpar(fontsize=6),direction="horizontal",position="bottom"))
+
+HM_Ready<-plot_grid(grid.grabExpr(draw(HM,heatmap_legend_side="bottom")))
+```
+
+
+```{r}
+library(ggnewscale)
+BarPlot<-plot_grid(BarPlot1,Barplot2,nrow=2)
+UMAP
+HM_Ready
+
+plot_grid(plot_grid(UMAP+theme(axis.ticks = element_blank(),axis.text = element_blank()),BarPlot,nrow=2,labels = c("a","b")),HM_Ready,nrow=1,labels = c("","c"))
+ggsave("FigureClusters.png",height = 8.5,width = 8.5,units = "in",bg="white")
+```
+

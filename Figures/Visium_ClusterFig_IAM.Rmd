@@ -1,0 +1,227 @@
+---
+title: "LoadingData"
+author: "Alina Kline-Schoder"
+date: "`r Sys.Date()`"
+output: html_document
+---
+# CAM
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+library(ggnewscale)
+library(Seurat)
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+library(circlize)
+library(scales)
+library(stringr)
+library(viridis)
+library(patchwork)
+library(ComplexHeatmap)
+library(ggrepel)
+
+source("/media/alina/Backup1/Scripts/R/Visium/Ontology.R")
+setwd("/media/alina/Backup1/Scripts/R/2022_SavedData/")
+source("/media/alina/Backup1/Scripts/R/Visium/ScatterPlot_AKS.R")
+source("/media/alina/Backup1/Scripts/R/Visium/Treemap_AKS.R")
+source("/media/alina/Backup1/Scripts/R/Visium/AK_SpatialPlot.R")
+load("Visium-Integrated.rdata")
+load("Microglia_IAM.rdata")
+Microglia$Treatment<-factor(Microglia$Treatment,levels = c("Naive","FUS+MB","FUS-BBBO","FUS"))
+Microglia$Full<-factor(Microglia$Full,levels=c("WT Naive","AD Naive","WT FUS+MB","AD FUS+MB","WT FUS-BBBO","AD FUS-BBBO","WT FUS","AD FUS"))
+Microglia$seurat_clusters<-factor(Microglia$seurat_clusters,levels=c("0","1","2","3","IAM 0","IAM 1","6"))
+
+TaxDef<-read.csv("/media/alina/Backup1/Scripts/R/2022_NewSeq/TaxRef.csv")
+TaxDef<-rbind(TaxDef,data.frame(X=NA,TaxonomyRank1="Immune cells",TaxonomyRank2="Immune cells",TaxonomyRank3="Immune cells",TaxonomyRank4=c("X0","X1","X2","X3","X0.IAM","X1.IAM","X5","X6")))
+rownames(TaxDef)<-str_replace_all(TaxDef$TaxonomyRank4,' ','.')
+rownames(TaxDef)<-str_replace_all(rownames(TaxDef),'-','.')
+TaxDef[c("Non.glutamatergic.neuroblasts","Glutamatergic.neuroblasts"),"TaxonomyRank2"]<-"Neuroblast"
+TaxDef[TaxDef$TaxonomyRank1=="Glia","TaxonomyRank2"]<-"Glia"
+#TaxDef[grepl("Telencephalon",TaxDef$TaxonomyRank3),"TaxonomyRank2"]<-"Telencephalon"
+
+ColorsClusters<-c("#C13A13",
+                  "#DD9D56",
+                  "#EBCE78", # green
+                  "#F8FF99", # green
+                  "#CEE790", # IAM
+                  "#A4CF86",
+                  "#509F72")# DAM
+ColorsGroup<-c("white","#81A4CD","#BC6290","#9F83B3")
+
+col_fun = colorRamp2(c(-2, 0, 2), c("blue", "#D3D3D3", "red"))
+```
+# barplot
+```{r}
+tab<-as.data.frame(table(Microglia$Full,Microglia$seurat_clusters))
+tot<-as.data.frame(table(Microglia$Full))
+tab$Freq_Norm<-tab$Freq/tot[tab$Var1,]$Freq*100
+tab$Genotype<-recode(tab$Var1,"WT Naive"="WT","AD Naive"="AD","WT FUS"="WT","AD FUS"="AD","WT FUS+MB"="WT","AD FUS+MB"="AD","WT FUS-BBBO"="WT","AD FUS-BBBO"="AD")
+tab$Treatment<-recode(tab$Var1,"WT Naive"="Naive","AD Naive"="Naive","WT FUS"="FUS","AD FUS"="FUS","WT FUS+MB"="FUS+MB","AD FUS+MB"="FUS+MB","WT FUS-BBBO"="FUS-BBBO","AD FUS-BBBO"="FUS-BBBO")
+
+levels(tab$Var1)
+
+#WT
+tabWT<-tab[tab$Genotype=="WT",]
+tabAD<-tab[tab$Genotype=="AD",]
+
+BarPlot1<-ggplot(tabWT,aes(x=Freq_Norm,y=Treatment))+geom_bar(stat="identity",aes(fill=Var2),position = position_stack(reverse = TRUE))+scale_y_discrete(expand = c(0,0))+new_scale_fill()+geom_tile(aes(y=Treatment,x=-3,fill=Treatment),width=5,color="black")+scale_fill_manual(values=ColorsGroup)+facet_grid(Genotype~.)+theme_bw()+xlab("Cluster (%)")+theme(legend.position = "none",axis.title.y = element_blank(),axis.text.x = element_blank(),axis.title.x = element_blank())+scale_x_continuous(expand = c(0,0))+theme(strip.background = element_rect(fill=c("white")))
+
+Barplot2<-ggplot(tabAD,aes(x=Freq_Norm,y=Treatment))+geom_bar(stat="identity",aes(fill=Var2),position = position_stack(reverse = TRUE))+scale_y_discrete(expand = c(0,0))+new_scale_fill()+geom_tile(aes(y=Treatment,x=-3,fill=Treatment),width=5,color="black")+scale_fill_manual(values=ColorsGroup)+facet_grid(Genotype~.)+theme_bw()+xlab("Cluster (%)")+theme(legend.position = "none",axis.title.y = element_blank())+scale_x_continuous(expand = c(0,0))+theme(strip.background = element_rect(fill="white"))
+```
+
+# cluster ID heatmap
+```{r}
+Idents(Microglia)<-"seurat_clusters"
+AllMark<-FindAllMarkers(Microglia,only.pos = T)
+AllMark$pct.dif<-AllMark$pct.1-AllMark$pct.2
+Genes2Plot<-AllMark%>%
+    group_by(cluster) %>%
+    top_n(n = 2, wt = pct.dif)
+Genes2Plot<-unique(Genes2Plot$gene)
+Idents(Microglia)<-"seurat_clusters"
+Sub<-subset(Microglia,downsample=200)
+#Genes2Plot<-c("P2ry12","Cx3cr1","Aif1","Ccl3","Ccl4","Fos","Mki67","Top2a","Ifi30")
+Data<-t(as.matrix(Sub@assays$RNA@data[Genes2Plot,]))
+Data<-cbind(as.data.frame(Data),Sub$seurat_clusters,Sub$Treatment,Sub$Genotype)
+colnames(Data)[dim(Data)[2]-2]<-"Cluster"
+colnames(Data)[dim(Data)[2]-1]<-"Treatment"
+colnames(Data)[dim(Data)[2]]<-"Genotype"
+
+Data$Genotype<-factor(Data$Genotype,levels=c("WT","AD"))
+Data<-Data[order(Data$Cluster,Data$Treatment,Data$Genotype),]
+Treatment<-Data$Treatment
+Cluster<-Data$Cluster
+Genotype<-Data$Genotype
+Data<-Data[,1:(dim(Data)[2]-3)]
+Data<-Seurat::ScaleData(t(as.matrix(Data)))
+
+col_ha=HeatmapAnnotation(Cluster=Cluster,Treat=Treatment,show_legend = F,show_annotation_name = F,border=T)
+
+HM<-Heatmap(Data,
+            cluster_rows = FALSE,
+            cluster_columns = FALSE,
+            show_row_names = TRUE,
+            show_column_names = FALSE,
+            row_names_side = "left",
+            top_annotation = col_ha,
+            col=col_fun,
+            row_names_gp = gpar(fontsize=8,family="Arial"),
+            row_split = AllMark[Genes2Plot,]$cluster,
+            column_split = Cluster,
+            column_title_gp = gpar(fontsize=8,family="Arial"),
+            row_title =" ",
+        heatmap_legend_param = list(title="",title_gp=gpar(fontsize=8,family="Arial"),labels_gp=gpar(fontsize=6),direction="horizontal",position="bottom"))
+
+HM_Ready<-plot_grid(grid.grabExpr(draw(HM,heatmap_legend_side="bottom")))
+```
+
+
+# correlation heatmap
+
+
+```{r}
+Matrix<-brain.merge@meta.data[,rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+SigAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$P)
+Type<-TaxDef[rownames(CorAll),]
+FullCor<-CorAll[rownames(CorAll) %in% c("X0","X1","X2","X3","X0.IAM","X1.IAM","X5","X6"),]
+SigAll<-SigAll[rownames(CorAll) %in% c("X0","X1","X2","X3","X0.IAM","X1.IAM","X5","X6"),]
+
+
+top=columnAnnotation(Cluster=anno_block(gp = gpar(fill = ColorsClusters),labels = c("X0", "X1","X2","X3","X0.IAM","X1.IAM","X5","X6"),labels_gp = gpar(fontsize=8),height = unit(4,"mm")),show_legend=FALSE, show_annotation_name = FALSE,border=TRUE)
+
+TypeSub<-TaxDef[!(TaxDef$TaxonomyRank2=="Immune cells"),]
+FullCor<-as.matrix(FullCor[,colnames(FullCor) %in% rownames(TypeSub)])
+
+TypeSub<-TypeSub[colnames(FullCor),]
+TypeSub$TaxonomyRank2<-recode(TypeSub$TaxonomyRank2,
+  "Vascular cells"="Vascular")
+
+HMClusFull<-Heatmap(t(FullCor),
+                    column_order = c("X0", "X1","X2","X3","X0.IAM","X1.IAM","X5","X6"),
+  cluster_rows = TRUE,
+  cluster_columns = FALSE,
+  #custer_row_slices = TRUE,
+  cluster_column_slices = FALSE,
+  show_row_names = TRUE,
+  #row_labels = Names,
+  show_column_names = TRUE,
+  top_annotation = top,
+  row_dend_side = "left",
+  row_title_side = "right",
+  row_title_gp = gpar(fontsize=8,family="Arial"),
+  column_title = NULL,
+  column_title_gp=gpar(fontsize=8,family="Arial"),
+  row_names_side = "left",
+  column_split = c("X0","X1","X2","X3","X0.IAM","X1.IAM","X5","X6"),
+  row_split = TypeSub$TaxonomyRank2,
+  col=viridis(1000,option="A"),
+  name = " ", heatmap_legend_param = list(title=NULL,title_gp=gpar(fontsize=6,family="Arial"),labels_gp=gpar(fontsize=6),direction="horizontal",position="bottom"),
+  row_names_gp = gpar(fontsize=6,family="Arial"))
+```
+
+```{r}
+Cells<-c("X0","X1","X2","X3","X4","X5","X6","Peripheral.sensory.non.peptidergic.neurons","Dentate.gyrus.radial.glia.like.cells","Sympathetic.cholinergic.neurons","Subcommissural.organ.hypendymal.cells","Satellite.glia","Peripheral.sensory.peptidergic.neurons")
+
+Long<-cbind(brain.merge@meta.data[,Cells],brain.merge$Genotype,brain.merge$Treatment)
+colnames(Long)<-c(Cells,"Genotype","Treatment")
+formula <- y ~ x
+
+NaiveColor<-"#FFFFFF"
+FUSColor<-"#FEC5BB"
+
+Long$Genotype<-factor(recode(Long$Genotype,"3xtg"="AD"),levels=c("WT","AD"))
+
+Long$Treatment<-factor(recode(Long$Treatment,"FUS"="FUS-BBBO"),levels=c("Naive","FUS-BBBO"))
+
+shapes<-as.numeric(recode(Long$Genotype,"AD"=15,"WT"=16))
+color<-recode(Long$Treatment,"Naive"=ColorsGroup[1],"FUS-BBBO"=ColorsGroup[3])
+
+library(grid)
+library(ggpmisc)
+library(broom)
+formula <- y ~ x
+Clus0<-ggplot(Long,aes(x=X0,y=Peripheral.sensory.non.peptidergic.neurons))+geom_point(color=ColorsClusters[1],shape=shapes,size=1)+geom_smooth(method="lm",fullrange=TRUE,color="black",size=0.5,se=FALSE)+ stat_poly_eq(aes(label = paste(..rr.label..)), label.x = 0.5, label.y = 0.95, formula = formula, parse = TRUE, size = 3) +theme_bw()+theme(legend.position = "none")+coord_cartesian(expand=FALSE)+xlab("X0")+ylab("Peripheral sensory non\npeptidergic neurons")+theme(axis.title = element_text(size=8),panel.background = element_rect(fill="white"),panel.grid = element_blank(),strip.background = element_rect(fill="white"),plot.margin = margin(0.5,0.25,0.25,0.75,"cm"))+scale_x_continuous(breaks = c(0,0.8,1.6),limits = c(0,1.6))
+
+Clus1<-ggplot(Long,aes(x=X1,y=Peripheral.sensory.non.peptidergic.neurons))+geom_point(color=ColorsClusters[2],shape=shapes,size=1)+geom_smooth(method="lm",fullrange=TRUE,color="black",size=0.5,se=FALSE)+ stat_poly_eq(aes(label = paste(..rr.label..)), label.x = 0.5, label.y = 0.95,
+formula = formula, parse = TRUE, size = 3)+theme_bw()+theme(legend.position = "none")+coord_cartesian(expand=FALSE)+xlab("X1")+ylab("Peripheral sensory non\npeptidergic neurons")+theme(axis.title = element_text(size=8),panel.background = element_rect(fill="white"),panel.grid = element_blank(),strip.background = element_rect(fill="white"),plot.margin = margin(0.5,0.25,0.25,0.75,"cm"))+scale_x_continuous(breaks = c(0,0.8,1.6),limits = c(0,1.6))
+
+
+Clus2<-ggplot(Long,aes(x=X2,y=Dentate.gyrus.radial.glia.like.cells))+geom_point(color=ColorsClusters[3],shape=shapes,size=1)+geom_smooth(method="lm",fullrange=TRUE,color="black",size=0.5,se=FALSE)+ stat_poly_eq(aes(label = paste(..rr.label..)), label.x = 0.5, label.y = 0.95,
+formula = formula, parse = TRUE, size = 3) +theme_bw()+theme(legend.position = "none")+coord_cartesian(expand=FALSE)+xlab("X2")+ylab("Dentate gyrus\nradial glia like cells")+theme(axis.title = element_text(size=8),panel.background = element_rect(fill="white"),panel.grid = element_blank(),strip.background = element_rect(fill="white"),plot.margin = margin(0.5,0.25,0.25,0.75,"cm"))+scale_x_continuous(breaks = c(0,0.7,1.4),limits = c(0,1.4))
+
+Clus3<-ggplot(Long,aes(x=X3,y=Dentate.gyrus.radial.glia.like.cells))+geom_point(color=ColorsClusters[4],shape=shapes,size=1)+geom_smooth(method="lm",fullrange=TRUE,color="black",size=0.5,se=FALSE)+ stat_poly_eq(aes(label = paste(..rr.label..)), label.x = 0.5, label.y = 0.95,
+formula = formula, parse = TRUE, size = 3) +theme_bw()+theme(legend.position = "none")+coord_cartesian(expand=FALSE)+xlab("X3")+ylab("Dentate gyrus\nradial glia like cells")+theme(axis.title = element_text(size=8),panel.background = element_rect(fill="white"),panel.grid = element_blank(),strip.background = element_rect(fill="white"),plot.margin = margin(0.5,0.25,0.25,0.75,"cm"))+scale_x_continuous(breaks = c(0,0.5,1),limits = c(0,1))
+
+Clus4<-ggplot(Long,aes(x=X4,y=Satellite.glia))+geom_point(color=ColorsClusters[5],shape=shapes,size=1)+geom_smooth(method="lm",fullrange=TRUE,color="black",size=0.5,se=FALSE)+ stat_poly_eq(aes(label = paste(..rr.label..)), label.x = 0.5, label.y = 0.95,
+formula = formula, parse = TRUE, size = 3) +theme_bw()+theme(legend.position = "none")+coord_cartesian(expand=FALSE)+theme(axis.title = element_text(size=8),panel.background = element_rect(fill="white"),panel.grid = element_blank(),strip.background = element_rect(fill="white"),plot.margin = margin(0.5,0.25,0.25,0.75,"cm"))+xlab("X4")+ylab("Satellite glia")+scale_x_continuous(breaks = c(0,2.8,5.6),limits = c(0,5.6))
+
+Clus5<-ggplot(Long,aes(x=X5,y=Peripheral.sensory.peptidergic.neurons))+geom_point(color=ColorsClusters[6],shape=shapes,size=1)+geom_smooth(method="lm",fullrange=TRUE,color="black",size=0.5,se=FALSE)+ stat_poly_eq(aes(label = paste(..rr.label..)), label.x = 0.5, label.y = 0.95,
+formula = formula, parse = TRUE, size = 3) +theme_bw()+theme(legend.position = "none")+coord_cartesian(expand=FALSE)+xlab("X5")+ylab("Peripheral sensory\n peptidergic neurons")+theme(axis.title = element_text(size=8),panel.background = element_rect(fill="white"),panel.grid = element_blank(),strip.background = element_rect(fill="white"),plot.margin = margin(0.5,0.25,0.25,0.75,"cm"))+scale_x_continuous(breaks = c(0,0.6,1.2),limits = c(0,1.2))
+
+Clus6<-ggplot(Long,aes(x=X6,y=Sympathetic.cholinergic.neurons))+geom_point(color=ColorsClusters[7],shape=shapes,size=1)+geom_smooth(method="lm",fullrange=TRUE,color="black",size=0.5,se=FALSE)+ stat_poly_eq(aes(label = paste(..rr.label..)), label.x = 0.5, label.y = 0.95,
+formula = formula, parse = TRUE, size = 3) + theme_bw()+theme(legend.position = "none")+coord_cartesian(expand=FALSE)+xlab("X6")+ylab("Sympathetic \n cholinergic neurons")+theme(axis.title = element_text(size=8),panel.background = element_rect(fill="white"),panel.grid = element_blank(),strip.background = element_rect(fill="white"),plot.margin = margin(0.5,0.25,0.25,0.75,"cm"))+scale_x_continuous(breaks = c(0,2.8,5.6),limits = c(0,5.6))
+
+TopCorr<-plot_grid(Clus0,Clus1,Clus2,Clus3,Clus4,Clus5,Clus6,align = "v",axis="lr",nrow=7)
+```
+
+
+```{r}
+HMClusFull<-plot_grid(grid.grabExpr(draw(HMClusFull,heatmap_legend_side="bottom")))
+```
+
+
+```{r}
+UMAP<-DimPlot(Microglia,group.by = "seurat_clusters",label=T,label.box = T)+theme(legend.position = "none",plot.title = element_blank())+theme(axis.text = element_blank(),axis.ticks = element_blank(),axis.title = element_blank())
+
+
+# Plot 1
+Left<-plot_grid(UMAP,BarPlot1,Barplot2,HM_Ready,nrow=4,rel_heights = c(0.75,0.25,0.35,1),labels = c("a","b","","c"))
+Top<-plot_grid(Left,TopCorr,HMClusFull,nrow=1,rel_widths = c(1,0.65,2),labels = c("","d","e"))
+#Full<-plot_grid(Top,TopCorr,nrow=2,rel_heights = c(3,0.5),labels = c("","e"))
+
+ggsave("/media/alina/Backup1/Scripts/R/Visium/Figures/Clustering.png",height = 11.25,width = 11,units = "in",bg="white")
+```
+
+

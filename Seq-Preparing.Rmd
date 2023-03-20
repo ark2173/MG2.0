@@ -1,0 +1,320 @@
+---
+title: "1-Demultiplexing"
+author: "Alina Kline-Schoder"
+date: "8/16/2022"
+output: 
+    github_document:
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+library(Seurat)
+```
+
+# Loading
+```{r Hashing EA007}
+Raw <- Read10X(data.dir = "/media/alina/Backup1/Papers/MG2.0/Data/CellRangerOuts/EA007_cellranger_count_outs/EA007_cellranger_count_outs/filtered_feature_bc_matrix/")
+Seurat <- CreateSeuratObject(counts = Raw, project = "EA007")
+Seurat[["percent.mt"]] <- PercentageFeatureSet(Seurat,pattern = "^mt-")
+Seurat[["percent.rb"]] <- PercentageFeatureSet(Seurat,pattern = "^Rp-")
+Seurat <- NormalizeData(Seurat, normalization.method = "LogNormalize", scale.factor = 10000)
+Seurat <- NormalizeData(Seurat)
+Seurat <- FindVariableFeatures(Seurat, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(Seurat), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(Seurat)
+LabelPoints(plot = plot1, points = top10, repel = TRUE)
+
+
+Hashing <- Read10X(data.dir = "/media/alina/Backup1/Papers/MG2.0/Data/CellRangerOuts/EA007F/outs/raw_feature_bc_matrix/")
+HashingID <- Hashing[!(rownames(Hashing) %in% c("CD9_TotalSeqB","CD68_TotalSeqB","CD63","CD45")),colSums(Hashing)>0]
+umis<-Seurat@assays$RNA@data@Dimnames[[2]]
+joint<-intersect(umis,colnames(Hashing))
+
+Seurat[["ADT"]]<-CreateAssayObject(counts = Hashing[c("CD68_TotalSeqB","CD9_TotalSeqB","CD63","CD45"),joint])
+
+joint<-intersect(umis,colnames(HashingID))
+HashingID<-HashingID[,joint]
+Seurat<-subset(Seurat,cells = joint)
+Seurat[["HTO"]]<-CreateAssayObject(counts = HashingID)
+Seurat <- NormalizeData(Seurat, assay = "HTO", normalization.method = "CLR")
+Seurat <- HTODemux(Seurat, assay = "HTO",positive.quantile = 0.999)
+table(Seurat$HTO_classification.global)
+Idents(Seurat)<-"HTO_classification.global"
+EA007<-subset(Seurat, idents = "Singlet", invert = FALSE)
+EA007$hash.ID<-droplevels(EA007$hash.ID)
+library(dplyr)
+EA007$Full<-recode(EA007$hash.ID,
+                        "AB1"="WT FUS-BBBO",
+                        "AB2"="AD FUS-BBBO",
+                        "AB3"="WT FUS-BBBO",
+                        "AB4"="AD FUS+MB",
+                        "AB5"="WT FUS",
+                        "AB6"="AD FUS",
+                        "AB7"="WT Naive",
+                        "AB8"="AD Naive")
+EA007$Genotype<-recode(EA007$hash.ID,
+                        "AB1"="WT",
+                        "AB2"="AD",
+                        "AB3"="WT",
+                        "AB4"="AD",
+                        "AB5"="WT",
+                        "AB6"="AD",
+                        "AB7"="WT",
+                        "AB8"="AD")
+EA007$Treatment<-recode(EA007$hash.ID,
+                        "AB1"="FUS-BBBO",
+                        "AB2"="FUS-BBBO",
+                        "AB3"="FUS-BBBO",
+                        "AB4"="FUS+MB",
+                        "AB5"="FUS",
+                        "AB6"="FUS",
+                        "AB7"="Naive",
+                        "AB8"="Naive")
+```
+
+
+```{r Hashing EA008}
+Raw <- Read10X(data.dir = "/media/alina/Backup1/Papers/MG2.0/Data/CellRangerOuts/EA008_cellranger_count_outs/filtered_feature_bc_matrix/")
+Seurat <- CreateSeuratObject(counts = Raw, project = "EA008")
+Seurat[["percent.mt"]] <- PercentageFeatureSet(Seurat,pattern = "^mt-")
+Seurat[["percent.rb"]] <- PercentageFeatureSet(Seurat,pattern = "^Rp-")
+Seurat <- NormalizeData(Seurat, normalization.method = "LogNormalize", scale.factor = 10000)
+Seurat <- NormalizeData(Seurat)
+Seurat <- FindVariableFeatures(Seurat, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(Seurat), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(Seurat)
+LabelPoints(plot = plot1, points = top10, repel = TRUE)
+
+
+Hashing <- Read10X(data.dir = "/media/alina/Backup1/Papers/MG2.0/Data/CellRangerOuts/EA008F/outs/raw_feature_bc_matrix")
+HashingID <- Hashing[!(rownames(Hashing) %in% c("CD9_TotalSeqB","CD68_TotalSeqB","CD63","CD45")),colSums(Hashing)>0]
+umis<-Seurat@assays$RNA@data@Dimnames[[2]]
+joint<-intersect(umis,colnames(HashingID))
+
+Seurat[["ADT"]]<-CreateAssayObject(counts = Hashing[c("CD68_TotalSeqB","CD9_TotalSeqB","CD63","CD45"),joint])
+
+
+joint<-intersect(umis,colnames(HashingID))
+HashingID<-HashingID[,joint]
+Seurat<-subset(Seurat,cells = joint)
+Seurat[["HTO"]]<-CreateAssayObject(counts = HashingID)
+Seurat <- NormalizeData(Seurat, assay = "HTO", normalization.method = "CLR")
+Seurat <- HTODemux(Seurat, assay = "HTO",positive.quantile = 0.999)
+table(Seurat$HTO_classification.global)
+Idents(Seurat)<-"HTO_classification.global"
+EA008<-subset(Seurat, idents = "Singlet", invert = FALSE)
+EA008$hash.ID<-droplevels(EA008$hash.ID)
+EA008$Full<-recode(EA008$hash.ID,
+                        "AB1"="AD FUS-BBBO",
+                        "AB2"="WT FUS+MB",
+                        "AB3"="AD FUS+MB",
+                        "AB4"="WT FUS+MB",
+                        "AB5"="WT FUS",
+                        "AB6"="AD FUS",
+                        "AB7"="AD Naive",
+                        "AB8"="WT Naive")
+EA008$Genotype<-recode(EA008$hash.ID,
+                        "AB1"="AD",
+                        "AB2"="WT",
+                        "AB3"="AD",
+                        "AB4"="WT",
+                        "AB5"="WT",
+                        "AB6"="AD",
+                        "AB7"="AD",
+                        "AB8"="WT")
+EA008$Treatment<-recode(EA008$hash.ID,
+                        "AB1"="FUS-BBBO",
+                        "AB2"="FUS+MB",
+                        "AB3"="FUS+MB",
+                        "AB4"="FUS+MB",
+                        "AB5"="FUS",
+                        "AB6"="FUS",
+                        "AB7"="Naive",
+                        "AB8"="Naive")
+
+
+```
+
+```{r Hashing EA006, echo=TRUE}
+rm(Seurat)
+Raw <- Read10X(data.dir = "/media/alina/Backup1/Papers/MG2.0/Data/CellRangerOuts/EA006_cellranger_count_outs/EA006_cellranger_count_outs/filtered_feature_bc_matrix/")
+Seurat <- CreateSeuratObject(counts = Raw, project = "EA006")
+Seurat[["percent.mt"]] <- PercentageFeatureSet(Seurat,pattern = "^mt-")
+Seurat[["percent.rb"]] <- PercentageFeatureSet(Seurat,pattern = "^Rp-")
+Seurat <- NormalizeData(Seurat, normalization.method = "LogNormalize", scale.factor = 10000)
+Seurat <- NormalizeData(Seurat)
+Seurat <- FindVariableFeatures(Seurat, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(Seurat), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(Seurat)
+LabelPoints(plot = plot1, points = top10, repel = TRUE)
+
+
+Hashing <- Read10X(data.dir = "/media/alina/Backup1/Papers/MG2.0/Data/CellRangerOuts/EA006F/outs/raw_feature_bc_matrix")
+HashingID <- Hashing[!(rownames(Hashing) %in% c("CD9_TotalSeqB","CD68_TotalSeqB","CD63","CD45")),colSums(Hashing)>0]
+umis<-Seurat@assays$RNA@data@Dimnames[[2]]
+joint<-intersect(umis,colnames(HashingID))
+Seurat<-subset(Seurat,cells = joint)
+Seurat[["ADT"]]<-CreateAssayObject(counts = Hashing[c("CD68_TotalSeqB","CD9_TotalSeqB","CD63","CD45"),joint])
+
+
+joint<-intersect(umis,colnames(HashingID))
+HashingID<-HashingID[,joint]
+Seurat<-subset(Seurat,cells = joint)
+Seurat[["HTO"]]<-CreateAssayObject(counts = HashingID)
+Seurat <- NormalizeData(Seurat, assay = "HTO", normalization.method = "CLR")
+Seurat <- HTODemux(Seurat, assay = "HTO",positive.quantile = 0.999)
+table(Seurat$HTO_classification.global)
+Idents(Seurat)<-"HTO_classification.global"
+EA006<-subset(Seurat, idents = "Singlet", invert = FALSE)
+EA006$hash.ID<-droplevels(EA006$hash.ID)
+
+EA006$Full<-recode(EA006$hash.ID,
+                        "AB1"="AD FUS+MB",
+                        "AB2"="WT FUS-BBBO",
+                        "AB3"="AD FUS-BBBO",
+                        "AB4"="WT FUS+MB",
+                        "AB5"="AD Naive",
+                        "AB6"="WT Naive",
+                        "AB7"="AD FUS",
+                        "AB8"="WT FUS")
+EA006$Genotype<-recode(EA006$hash.ID,
+                        "AB1"="AD",
+                        "AB2"="WT",
+                        "AB3"="AD",
+                        "AB4"="WT",
+                        "AB5"="AD",
+                        "AB6"="WT",
+                        "AB7"="AD",
+                        "AB8"="WT")
+EA006$Treatment<-recode(EA006$hash.ID,
+                        "AB1"="FUS+MB",
+                        "AB2"="FUS-BBBO",
+                        "AB3"="FUS-BBBO",
+                        "AB4"="FUS+MB",
+                        "AB5"="Naive",
+                        "AB6"="Naive",
+                        "AB7"="FUS",
+                        "AB8"="FUS")
+```
+
+# Integrating and clustering
+```{r}
+# normalize and identify variable features for each dataset independently
+Data<-list(EA007,EA008,EA006)
+
+Data <- lapply(X = Data, FUN = function(x) {
+  DefaultAssay(x)<-"RNA"
+  VlnPlot(x,features = c("nFeature_RNA","percent.mt","nCount_RNA","percent.rb"),group.by = "Full")+NoLegend()
+  x <- subset(x,subset = percent.mt < 15 & nFeature_RNA>500)
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration run PCA on each
+# dataset using these features
+feat <- SelectIntegrationFeatures(object.list = Data)
+Data <- lapply(X = Data, FUN = function(x) {
+    x <- ScaleData(x, features = feat, verbose = FALSE)
+    x <- RunPCA(x, features = feat, verbose = FALSE)
+})
+
+anchors <- FindIntegrationAnchors(object.list = Data, anchor.features = feat, reduction = "rpca")
+
+Integrated <- IntegrateData(anchorset = anchors)
+```
+
+
+# low resolution clustering
+```{r}
+DefaultAssay(Integrated) <- "integrated"
+Integrated <- ScaleData(Integrated, verbose = FALSE)
+Integrated <- RunPCA(Integrated, npcs = 50, verbose = FALSE)
+ElbowPlot(Integrated,ndims = 50)
+Integrated <- RunUMAP(Integrated, reduction = "pca", dims = 1:20)
+Integrated <- FindNeighbors(Integrated, dims = 1:20)
+Integrated <- FindClusters(Integrated, resolution = 0.8)
+DimPlot(Integrated,group.by = "seurat_clusters",label=T)
+
+
+DefaultAssay(Integrated)<-"RNA"
+DotPlot(Integrated,features = c("F12", "H2-Aa", "Marco","F13a1", "Lyve1", "Mgl2", "Dab2", "Adgre1", "Fcgr1", "Aif1", "Cd68", "Lgals3", "Mertk"),group.by = "seurat_clusters")+labs(title="CAM")
+DotPlot(Integrated,features = c("Gfap","S100b","Aldh1l1","Fgfr3","Gjb6"),group.by = "seurat_clusters")+labs(title="Astrocytes")
+DotPlot(Integrated,features = c("Cx3cr1","Tmem119","P2ry12","Hexb","Sall1","Aif1","Csf1r","Siglech","Itgam","Ptprc","Cd68","Itgax","Ccr2","Pf4","Mrc1","Ms4a7","Cd163","Tlr2","Tlr4"),group.by = "seurat_clusters")+labs(title="Microglia")
+
+DotPlot(Integrated,features = c("Cldn5"),group.by = "seurat_clusters")+labs(title="ECs")
+
+DotPlot(Integrated,features = c("Camp","S100a8","S100a9"),group.by = "seurat_clusters")+labs(title="Neutrophils")
+
+DotPlot(Integrated,features = c("Pdgfrb","Cspg4","Des","Anpep"),group.by = "seurat_clusters")+labs(title="Mural Cells")
+
+DotPlot(Integrated,features = c("Enpp2","Igfbp2", "Ttr", "Ptgds", "Prlr"),group.by = "seurat_clusters")+labs(title="OPCs")
+
+Microglia<-subset(Integrated,idents = c(0,1,2,3,4,5,6,7,8),invert=F)
+Idents(Integrated)<-"seurat_clusters"
+Others<-subset(Integrated,idents = c(0,1,2,3,4,5,6,7,8),invert=T)
+```
+
+# Reintegrating Microglia
+```{r}
+AllOfIt<-list(EA006,EA007,EA008)
+Idents(Microglia)<-"orig.ident"
+for (i in 1:length(AllOfIt)) {
+  AllOfIt[[i]]<-subset(AllOfIt[[i]],subset = percent.mt < 5 & nFeature_RNA>500)  
+  Idents(AllOfIt[[i]])<-"orig.ident"    
+  DefaultAssay(AllOfIt[[i]])<-"RNA"
+  AllOfIt[[i]] <- subset(AllOfIt[[i]],cells=gsub("\\_.*","",WhichCells(Microglia,idents = levels(Idents(AllOfIt[[i]])))))
+  AllOfIt[[i]] <- SCTransform(AllOfIt[[i]], verbose = FALSE)
+  DefaultAssay(AllOfIt[[i]])<-"SCT"
+}
+
+Feat <- SelectIntegrationFeatures(object.list = AllOfIt, nfeatures = 3000)
+AllOfIt <- PrepSCTIntegration(object.list = AllOfIt, anchor.features = Feat, verbose = FALSE)
+Anchors <- FindIntegrationAnchors(object.list = AllOfIt, normalization.method = "SCT", anchor.features = Feat, verbose = FALSE)
+Microglia <- IntegrateData(anchorset = Anchors, normalization.method = "SCT",verbose = FALSE)
+```
+
+# Clustering Microglia
+```{r}
+DefaultAssay(Microglia) <- "integrated"
+Microglia <- ScaleData(Microglia, verbose = FALSE)
+Microglia <- RunPCA(Microglia, npcs = 50, verbose = FALSE)
+ElbowPlot(Microglia,ndims = 50)
+Microglia <- RunUMAP(Microglia, reduction = "pca", dims = 1:15)
+Microglia <- FindNeighbors(Microglia, dims = 1:15)
+Microglia <- FindClusters(Microglia, resolution = 0.5)
+```
+
+# Re-clustering IAM 0 and IAM 1
+```{r}
+IAM<-subset(Microglia,idents="4")
+DefaultAssay(IAM) <- "integrated"
+#IAM <- ScaleData(IAM, verbose = FALSE)
+IAM <- RunPCA(IAM, npcs = 50, verbose = FALSE)
+ElbowPlot(IAM,ndims = 50)
+IAM <- RunUMAP(IAM, reduction = "pca", dims = 1:10)
+IAM <- FindNeighbors(IAM, dims = 1:10)
+IAM <- FindClusters(IAM, resolution = 0.5)
+
+Clus_All<-as.character(Microglia$seurat_clusters)
+Clus_All[Clus_All==4]<-paste("IAM",IAM$seurat_clusters)
+
+Microglia$seurat_clusters_Sep<-Clus_All
+```
+
+```{r}
+setwd('/media/alina/Backup1/Papers/MG2.0/Data/RData/')
+save(Microglia,file="Seq1-Microglia.RData")
+```
+

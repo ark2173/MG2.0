@@ -1,0 +1,310 @@
+---
+title: "LoadingData"
+author: "Alina Kline-Schoder"
+date: "`r Sys.Date()`"
+output: html_document
+---
+# CAM
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+library(Seurat)
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+library(circlize)
+library(scales)
+library(stringr)
+library(viridis)
+library(patchwork)
+library(ComplexHeatmap)
+library(ggrepel)
+
+setwd("/media/alina/Backup1/Papers/MG2.0/Data/RData/")
+source("/media/alina/Backup1/Papers/MG2.0/Scripts/RAnalysis/Functions/AK_SpatialPlot.R")
+load("Vis1-LoadingVisCell2Location.RData")
+load("Seq1-Microglia.RData")
+TaxDef<-read.csv("TaxRef.csv")
+TaxDef<-rbind(TaxDef,data.frame(X=NA,TaxonomyRank1="Immune cells",TaxonomyRank2="Immune cells",TaxonomyRank3="Immune cells",TaxonomyRank4=c("X0","X1","X2","X3","X0.IAM","X1.IAM","X5","X6"),AKTax="Immune cells"))
+rownames(TaxDef)<-str_replace_all(TaxDef$TaxonomyRank4,' ','.')
+rownames(TaxDef)<-str_replace_all(rownames(TaxDef),'-','.')
+
+ColorsClusters<-c("#C13A13",
+                  "#DD9D56",
+                  "#EBCE78", # green
+                  "#F8FF99", # green
+                  "#CEE790", # IAM
+                  "#A4CF86",
+                  "#509F72")# DAM
+ColorsGroup<-c("white","#81A4CD","#BC6290","#9F83B3")
+ColorsLines<-c("black","#81375D")
+brain.merge$orig.ident<-factor(brain.merge$orig.ident)
+brain.merge$Genotype<-recode(brain.merge$orig.ident,
+                             "NaiveWT"="WT",
+                             "Naive3xtg"="AD",
+                             "FUSWT"="WT",
+                             "FUS3xtg"="AD")
+
+brain.merge$Treatment<-recode(brain.merge$orig.ident,
+                             "NaiveWT"="Naive",
+                             "Naive3xtg"="Naive",
+                             "FUSWT"="FUS-BBBO",
+                             "FUS3xtg"="FUS-BBBO")
+TaxDef$AKTax<-factor(TaxDef$AKTax,levels=c("BBB","BCSFB","Glia","Neurons"))
+```
+
+
+# CAM heatmap
+```{r}
+library(gtools)
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="Naive3xtg",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorNaiveAD<-CorAll[rownames(CorAll) %in% c("Perivascular.macrophages"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="NaiveWT",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorNaiveWT<-CorAll[rownames(CorAll) %in% c("Perivascular.macrophages"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="FUSWT",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorFUSWT<-CorAll[rownames(CorAll) %in% c("Perivascular.macrophages"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="FUS3xtg",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorFUSAD<-CorAll[rownames(CorAll) %in% c("Perivascular.macrophages"),]
+
+FullCor<-as.data.frame(t(rbind(CorNaiveWT,CorFUSWT,CorNaiveAD,CorFUSAD)))
+FullCor$Type<-Type[rownames(FullCor),]$AKTax
+colnames(FullCor)<-c("NaiveWT","FUSWT","NaiveAD","FUSAD","Type")
+FullCor$WT<-FullCor$FUSWT-FullCor$NaiveWT
+FullCor$AD<-FullCor$FUSAD-FullCor$NaiveAD
+
+Med_CAM<-FullCor %>% 
+  group_by(Type) %>%
+  summarize(WT=median(WT,na.rm = T),AD=median(AD))
+
+Mean_CAM<-FullCor %>% 
+  group_by(Type) %>%
+  summarize(WT=mean(WT,na.rm = T),AD=mean(AD))
+
+Max_CAM<-FullCor %>% 
+  group_by(Type) %>%
+  summarize(WT=max(abs(WT))*ifelse(max(abs(WT))==max(WT),1,-1),AD=max(abs(AD))*ifelse(max(abs(AD))==max(AD),1,-1))
+
+All_CAM<-FullCor
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="Naive3xtg",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorNaiveAD<-CorAll[rownames(CorAll) %in% c("X6"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="NaiveWT",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorNaiveWT<-CorAll[rownames(CorAll) %in% c("X6"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="FUSWT",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorFUSWT<-CorAll[rownames(CorAll) %in% c("X6"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="FUS3xtg",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorFUSAD<-CorAll[rownames(CorAll) %in% c("X6"),]
+
+FullCor<-as.data.frame(t(rbind(CorNaiveWT,CorFUSWT,CorNaiveAD,CorFUSAD)))
+FullCor$Type<-Type[rownames(FullCor),]$AKTax
+colnames(FullCor)<-c("NaiveWT","FUSWT","NaiveAD","FUSAD","Type")
+FullCor$WT<-FullCor$FUSWT-FullCor$NaiveWT
+FullCor$AD<-FullCor$FUSAD-FullCor$NaiveAD
+
+Med_6<-FullCor %>% 
+  group_by(Type) %>%
+  summarize(WT=median(WT,na.rm = T),AD=median(AD))
+
+Mean_6<-FullCor %>% 
+  group_by(Type) %>%
+  summarize(WT=mean(WT,na.rm = T),AD=mean(AD))
+
+Max_6<-FullCor %>% 
+  group_by(Type) %>%
+  summarize(WT=max(abs(WT))*ifelse(max(abs(WT))==max(WT),1,-1),AD=max(abs(AD))*ifelse(max(abs(AD))==max(AD),1,-1))
+
+All_6<-FullCor
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="Naive3xtg",c(rownames(TaxDef),"X0.IAM")]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorNaiveAD<-CorAll[rownames(CorAll) %in% c("X0.IAM"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="NaiveWT",c(rownames(TaxDef),"X0.IAM")]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorNaiveWT<-CorAll[rownames(CorAll) %in% c("X0.IAM"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="FUSWT",c(rownames(TaxDef),"X0.IAM")]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorFUSWT<-CorAll[rownames(CorAll) %in% c("X0.IAM"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="FUS3xtg",c(rownames(TaxDef),"X0.IAM")]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorFUSAD<-CorAll[rownames(CorAll) %in% c("X0.IAM"),]
+
+FullCor<-as.data.frame(t(rbind(CorNaiveWT,CorFUSWT,CorNaiveAD,CorFUSAD)))
+FullCor$Type<-Type[rownames(FullCor),]$AKTax
+colnames(FullCor)<-c("NaiveWT","FUSWT","NaiveAD","FUSAD","Type")
+
+FullCor$WT<-FullCor$FUSWT-FullCor$NaiveWT
+FullCor$AD<-FullCor$FUSAD-FullCor$NaiveAD
+
+Med_4<-FullCor %>% 
+  group_by(Type) %>%
+  summarize(WT=median(WT,na.rm = T),AD=median(AD))
+
+Mean_4<-FullCor %>% 
+  group_by(Type) %>%
+  summarize(WT=mean(WT,na.rm = T),AD=mean(AD))
+
+Max_4<-FullCor %>% 
+  group_by(Type) %>%
+  summarize(WT=max(abs(WT))*ifelse(max(abs(WT))==max(WT),1,-1),AD=max(abs(AD))*ifelse(max(abs(AD))==max(AD),1,-1))
+
+IAM1<-FullCor[rownames(TaxDef),]
+```
+
+```{r}
+
+
+```
+
+```{r}
+
+```
+
+```{r}
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="Naive3xtg",c(rownames(TaxDef),"X1.IAM")]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorNaiveAD<-CorAll[rownames(CorAll) %in% c("X1.IAM"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="NaiveWT",c(rownames(TaxDef),"X1.IAM")]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorNaiveWT<-CorAll[rownames(CorAll) %in% c("X1.IAM"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="FUSWT",c(rownames(TaxDef),"X1.IAM")]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorFUSWT<-CorAll[rownames(CorAll) %in% c("X1.IAM"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="FUS3xtg",c(rownames(TaxDef),"X1.IAM")]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+Type<-TaxDef[rownames(CorAll),]
+CorFUSAD<-CorAll[rownames(CorAll) %in% c("X1.IAM"),]
+
+FullCor<-as.data.frame(t(rbind(CorNaiveWT,CorFUSWT,CorNaiveAD,CorFUSAD)))
+FullCor$Type<-Type[rownames(FullCor),]$AKTax
+colnames(FullCor)<-c("NaiveWT","FUSWT","NaiveAD","FUSAD","Type")
+
+FullCor$WT<-FullCor$FUSWT-FullCor$NaiveWT
+FullCor$AD<-FullCor$FUSAD-FullCor$NaiveAD
+
+Med_4<-FullCor %>% 
+  group_by(Type) %>%
+  summarize(WT=median(WT,na.rm = T),AD=median(AD))
+
+Mean_4<-FullCor %>% 
+  group_by(Type) %>%
+  summarize(WT=mean(WT,na.rm = T),AD=mean(AD))
+
+Max_4<-FullCor %>% 
+  group_by(Type) %>%
+  summarize(WT=max(abs(WT))*ifelse(max(abs(WT))==max(WT),1,-1),AD=max(abs(AD))*ifelse(max(abs(AD))==max(AD),1,-1))
+
+IAM2<-FullCor[rownames(TaxDef),]
+```
+
+
+```{r}
+library(tidyr)
+All<-data.frame(WT_IAM0=IAM1$WT,
+                AD_IAM0=IAM1$AD,
+                WT_IAM1=IAM2$WT,
+                AD_IAM1=IAM2$AD,
+                WT_6=All_6$WT,
+                AD_6=All_6$AD,
+                WT_CAM=All_CAM$WT,
+                AD_CAM=All_CAM$AD)
+All$Specific<-rownames(All_6)
+All$Type<-Type[All$Specific,]$AKTax
+
+Tab<-pivot_longer(All,cols = colnames(All)[1:8])
+Tab<-Tab %>%
+  separate(name,'_',into = c("Genotype","Group"))
+Tab$Dir<-(Tab$value>0)
+
+Tab$Genotype<-factor(Tab$Genotype,
+                     levels=c("WT","AD"))
+Tab$Direction<-"Negative"
+Tab[Tab$Dir,]$Direction<-"Positive"
+Tab$Amplitude<-abs(Tab$value)
+Tab$Val_Plot<-Tab$Amplitude
+#Tab[Tab$Amplitude>0.25,]$Amplitude<-0.25
+Tab[Tab$Group=="6","Group"]<-"DAM"
+Tab<-Tab[!(Tab$Type %in% c("Microglia","Immune cells")),]
+
+Tab$Group<-factor(Tab$Group,levels=c("DAM","IAM0","IAM1","CAM"))
+Tab$Direction<-factor(Tab$Direction,levels = c("Positive","Negative"))
+Tab$Type<-factor(Tab$Type,levels=c("BBB","BCSFB","Glia","Neurons"))
+Tab<-Tab[order(Tab$value),]
+Tab[Tab$value<(-0.2),]$value<-(-0.2)
+Tab[Tab$value>0.5,]$value<-0.5
+Tab<-Tab[!is.na(Tab$Type),]
+
+JustWT<-Tab[Tab$Genotype=="WT",]
+#JustWT<-JustWT[JustWT$Group %in% c("DAM","CAM"),]
+WTPlot<-ggplot(JustWT,aes(x="",y=1,fill=value))+geom_bar(stat="identity",width=1,position="fill")+facet_grid(Type~Group)+theme_bw()+coord_polar("y",start=0)+theme(legend.position = "none")+scale_fill_gradient2(low="blue",mid="white",high="red",limits=c(-0.2,.5),midpoint = 0)+theme(strip.text.y = element_blank(),axis.text = element_blank(),axis.title = element_blank(),axis.ticks = element_blank())+ggtitle("WT")
+
+JustAD<-Tab[Tab$Genotype=="AD",]
+#JustAD<-JustAD[JustAD$Group %in% c("DAM","CAM"),]
+ADPlot<-ggplot(JustAD,aes(x="",y=1,fill=value))+geom_bar(stat="identity",width=1,position="fill")+facet_grid(Type~Group)+theme_bw()+coord_polar("y",start=0)+theme(legend.position = "none")+scale_fill_gradient2(low="blue",mid="white",high="red",limits=c(-0.2,.5),midpoint = 0)+theme(strip.text.y = element_blank(),axis.text = element_blank(),axis.title = element_blank(),axis.ticks = element_blank())+ggtitle("AD")
+
+IAMColors<-c("#297373","#FF8552")
+
+
+Leg<-get_legend(ggplot(JustAD,aes(x="",y=1,fill=value))+geom_bar(stat="identity",width=1,position="fill")+facet_grid(Type~Group)+theme_bw()+coord_polar("y",start=0)+scale_fill_gradient2(low="blue",mid="white",high="red",limits=c(-0.25,.5),breaks=c(-0.2,0,0.5),labels=c("-0.2 or less","0","0.5 or more"),midpoint = 0,guide = guide_colorbar(title="Amplitude")))
+
+Full_ADPlot <- ggplot_gtable(ggplot_build(ADPlot+theme(strip.background = element_rect(fill="white"))))
+stripr <- which(grepl('strip-t', Full_ADPlot$layout$name))
+fills <- c(ColorsClusters[6],IAMColors,"white")
+
+k <- 1
+for (i in stripr) {
+  j <- which(grepl('rect', Full_ADPlot$grobs[[i]]$grobs[[1]]$childrenOrder))
+  Full_ADPlot$grobs[[i]]$grobs[[1]]$children[[j]]$gp$fill <- fills[k]
+  k <- k+1
+}
+
+Full_WTPlot <- ggplot_gtable(ggplot_build(WTPlot+theme(strip.background = element_rect(fill="white"))))
+stripr <- which(grepl('strip-t', Full_WTPlot$layout$name))
+k <- 1
+#fills <- c(ColorsClusters[6],"white")
+for (i in stripr) {
+  j <- which(grepl('rect', Full_WTPlot$grobs[[i]]$grobs[[1]]$childrenOrder))
+  Full_WTPlot$grobs[[i]]$grobs[[1]]$children[[j]]$gp$fill <- fills[k]
+  k <- k+1
+}
+
+
+
+plot_grid(as_grob(Full_WTPlot),as_grob(Full_ADPlot),Leg,nrow=1,rel_widths = c(1,1,0.3),align = "h",axis = "tb")
+ggsave("/media/alina/Backup1/Papers/MG2.0/Figures/Summary.png",width = 8.5,height =5,units = "in",bg="white")
+```
+
+

@@ -1,0 +1,148 @@
+---
+title: "LoadingData"
+author: "Alina Kline-Schoder"
+date: "`r Sys.Date()`"
+output: html_document
+---
+# Setup
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+library(Seurat)
+library(ggplot2)
+library(cowplot)
+```
+
+# Loading- note names are wrong in the files but corrected here
+## Naive WT
+```{r}
+dir_FUSWT<-"/media/alina/Backup1/RawData/SpatialSeq-Processed/V216-N-3xTg-AK/outs/"
+FUSWT<-Load10X_Spatial(dir_FUSWT)
+FUSWT@images[["slice1"]]@coordinates[["tissue"]] <- as.integer(FUSWT@images[["slice1"]]@coordinates[["tissue"]])
+FUSWT@images[["slice1"]]@coordinates[["row"]] <- as.integer(FUSWT@images[["slice1"]]@coordinates[["row"]])
+FUSWT@images[["slice1"]]@coordinates[["col"]] <- as.integer(FUSWT@images[["slice1"]]@coordinates[["col"]])
+FUSWT@images[["slice1"]]@coordinates[["imagerow"]] <- as.integer(FUSWT@images[["slice1"]]@coordinates[["imagerow"]])
+FUSWT@images[["slice1"]]@coordinates[["imagecol"]] <- as.integer(FUSWT@images[["slice1"]]@coordinates[["imagecol"]])
+Meta<-read.csv('/media/alina/Backup1/Programming/Cell2LocationOuts_WithAK_IAM/SV216-FUS-WT-AK/obs.csv')
+rownames(Meta)<-gsub(".*_","",Meta$spot_id)
+FUSWT<-AddMetaData(FUSWT,Meta[,18:64])
+
+
+dir_Naive3xtg<-"/media/alina/Backup1/RawData/SpatialSeq-Processed/V216-FUS-WT-AK/outs/"
+Naive3xtg<-Load10X_Spatial(dir_Naive3xtg)
+Naive3xtg@images[["slice1"]]@coordinates[["tissue"]] <- as.integer(Naive3xtg@images[["slice1"]]@coordinates[["tissue"]])
+Naive3xtg@images[["slice1"]]@coordinates[["row"]] <- as.integer(Naive3xtg@images[["slice1"]]@coordinates[["row"]])
+Naive3xtg@images[["slice1"]]@coordinates[["col"]] <- as.integer(Naive3xtg@images[["slice1"]]@coordinates[["col"]])
+Naive3xtg@images[["slice1"]]@coordinates[["imagerow"]] <- as.integer(Naive3xtg@images[["slice1"]]@coordinates[["imagerow"]])
+Naive3xtg@images[["slice1"]]@coordinates[["imagecol"]] <- as.integer(Naive3xtg@images[["slice1"]]@coordinates[["imagecol"]])
+Meta<-read.csv('/media/alina/Backup1/Programming/Cell2LocationOuts_WithAK_IAM/SV216-N-3xTg-AK/obs.csv')
+rownames(Meta)<-gsub(".*_","",Meta$spot_id)
+Naive3xtg<-AddMetaData(Naive3xtg,Meta[,18:64])
+
+dir<-"/media/alina/Backup1/RawData/SpatialSeq-Processed/V216-FUS-3xTg-AK/outs/"
+FUS3xtg<-Load10X_Spatial(dir)
+FUS3xtg@images[["slice1"]]@coordinates[["tissue"]] <- as.integer(FUS3xtg@images[["slice1"]]@coordinates[["tissue"]])
+FUS3xtg@images[["slice1"]]@coordinates[["row"]] <- as.integer(FUS3xtg@images[["slice1"]]@coordinates[["row"]])
+FUS3xtg@images[["slice1"]]@coordinates[["col"]] <- as.integer(FUS3xtg@images[["slice1"]]@coordinates[["col"]])
+FUS3xtg@images[["slice1"]]@coordinates[["imagerow"]] <- as.integer(FUS3xtg@images[["slice1"]]@coordinates[["imagerow"]])
+FUS3xtg@images[["slice1"]]@coordinates[["imagecol"]] <- as.integer(FUS3xtg@images[["slice1"]]@coordinates[["imagecol"]])
+Meta<-read.csv('/media/alina/Backup1/Programming/Cell2LocationOuts_WithAK_IAM/SV216-FUS-3xTg-AK/obs.csv')
+rownames(Meta)<-gsub(".*_","",Meta$spot_id)
+FUS3xtg<-AddMetaData(FUS3xtg,Meta[,18:64])
+
+
+dir<-"/media/alina/Backup1/RawData/SpatialSeq-Processed/V216-N-WT-AK/outs"
+NaiveWT<-Load10X_Spatial(dir)
+NaiveWT@images[["slice1"]]@coordinates[["tissue"]] <- as.integer(NaiveWT@images[["slice1"]]@coordinates[["tissue"]])
+NaiveWT@images[["slice1"]]@coordinates[["row"]] <- as.integer(NaiveWT@images[["slice1"]]@coordinates[["row"]])
+NaiveWT@images[["slice1"]]@coordinates[["col"]] <- as.integer(NaiveWT@images[["slice1"]]@coordinates[["col"]])
+NaiveWT@images[["slice1"]]@coordinates[["imagerow"]] <- as.integer(NaiveWT@images[["slice1"]]@coordinates[["imagerow"]])
+NaiveWT@images[["slice1"]]@coordinates[["imagecol"]] <- as.integer(NaiveWT@images[["slice1"]]@coordinates[["imagecol"]])
+Meta<-read.csv('/media/alina/Backup1/Programming/Cell2LocationOuts_WithAK_IAM/SV216-N-WT-AK/obs.csv')
+rownames(Meta)<-gsub(".*_","",Meta$spot_id)
+NaiveWT<-AddMetaData(NaiveWT,Meta[,18:64])
+```
+
+
+# Normalization and clustering
+```{r}
+NaiveWT <- SCTransform(NaiveWT, assay = "Spatial", verbose = FALSE)
+NaiveWT <- RunPCA(NaiveWT, assay = "SCT", verbose = FALSE)
+NaiveWT <- FindNeighbors(NaiveWT, reduction = "pca", dims = 1:30)
+NaiveWT <- FindClusters(NaiveWT, verbose = FALSE)
+NaiveWT <- RunUMAP(NaiveWT, reduction = "pca", dims = 1:30)
+
+p1 <- DimPlot(NaiveWT, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(NaiveWT, label = TRUE, label.size = 3,image.alpha = 0.1)
+p1 + p2
+
+FUSWT <- SCTransform(FUSWT, assay = "Spatial", verbose = FALSE)
+FUSWT <- RunPCA(FUSWT, assay = "SCT", verbose = FALSE)
+FUSWT <- FindNeighbors(FUSWT, reduction = "pca", dims = 1:30)
+FUSWT <- FindClusters(FUSWT, verbose = FALSE)
+FUSWT <- RunUMAP(FUSWT, reduction = "pca", dims = 1:30)
+
+p1 <- DimPlot(FUSWT, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(FUSWT, label = TRUE, label.size = 3,image.alpha = 0.1)
+p1 + p2
+
+Naive3xtg <- SCTransform(Naive3xtg, assay = "Spatial", verbose = FALSE)
+Naive3xtg <- RunPCA(Naive3xtg, assay = "SCT", verbose = FALSE)
+Naive3xtg <- FindNeighbors(Naive3xtg, reduction = "pca", dims = 1:30)
+Naive3xtg <- FindClusters(Naive3xtg, verbose = FALSE)
+Naive3xtg <- RunUMAP(Naive3xtg, reduction = "pca", dims = 1:30)
+
+p1 <- DimPlot(Naive3xtg, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(Naive3xtg, label = TRUE, label.size = 3,image.alpha = 0.1)
+p1 + p2
+
+FUS3xtg <- SCTransform(FUS3xtg, assay = "Spatial", verbose = FALSE)
+FUS3xtg <- RunPCA(FUS3xtg, assay = "SCT", verbose = FALSE)
+FUS3xtg <- FindNeighbors(FUS3xtg, reduction = "pca", dims = 1:30)
+FUS3xtg <- FindClusters(FUS3xtg, verbose = FALSE)
+FUS3xtg <- RunUMAP(FUS3xtg, reduction = "pca", dims = 1:30)
+
+p1 <- DimPlot(FUS3xtg, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(FUS3xtg, label = TRUE, label.size = 3,image.alpha = 0.5)
+p1 + p2
+```
+# Variable genes
+```{r}
+NaiveWT <- FindVariableFeatures(NaiveWT, selection.method = "vst", nfeatures = 2000)
+SpatialFeaturePlot(object = NaiveWT, features = NaiveWT@assays$SCT@var.features[1:3], alpha = c(0.1, 1), ncol = 3,image.alpha = 0.3)
+
+FUSWT <- FindVariableFeatures(FUSWT, selection.method = "vst", nfeatures = 2000)
+SpatialFeaturePlot(object = FUSWT, features = FUSWT@assays$SCT@var.features[1:3], alpha = c(0.1, 1), ncol = 3,image.alpha = 0.3)
+
+Naive3xtg <- FindVariableFeatures(Naive3xtg, selection.method = "vst", nfeatures = 2000)
+SpatialFeaturePlot(object = Naive3xtg, features = Naive3xtg@assays$SCT@var.features[1:3], alpha = c(0.1, 1), ncol = 3,image.alpha = 0.3)
+
+FUS3xtg <- FindVariableFeatures(FUS3xtg, selection.method = "vst", nfeatures = 2000)
+SpatialFeaturePlot(object = FUS3xtg, features = FUS3xtg@assays$SCT@var.features[1:3], alpha = c(0.1, 1), ncol = 3,image.alpha = 0.3)
+```
+
+
+# Merging RNA Data
+```{r}
+NaiveWT$orig.ident<-"NaiveWT"
+Naive3xtg$orig.ident<-"Naive3xtg"
+FUSWT$orig.ident<-"FUSWT"
+FUS3xtg$orig.ident<-"FUS3xtg"
+brain.merge <- merge(merge(merge(NaiveWT, Naive3xtg),FUSWT), FUS3xtg)
+DefaultAssay(brain.merge) <- "SCT"
+VariableFeatures(brain.merge) <- c(VariableFeatures(NaiveWT), VariableFeatures(Naive3xtg),VariableFeatures(FUSWT), VariableFeatures(FUS3xtg))
+brain.merge <- PrepSCTFindMarkers(brain.merge)
+brain.merge <- RunPCA(brain.merge, verbose = FALSE)
+brain.merge <- FindNeighbors(brain.merge, dims = 1:30)
+brain.merge <- FindClusters(brain.merge, verbose = FALSE)
+brain.merge <- RunUMAP(brain.merge, dims = 1:30)
+brain.merge <- PrepSCTFindMarkers(brain.merge)
+DimPlot(brain.merge, reduction = "umap", group.by = c("seurat_clusters", "orig.ident"))
+```
+
+
+```{r}
+setwd("/media/alina/Backup1/Scripts/R/2022_SavedData/")
+save(brain.merge,file="Visium-Integrated-IAM.RData")
+```
+

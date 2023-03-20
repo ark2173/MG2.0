@@ -1,0 +1,179 @@
+---
+title: "LoadingData"
+author: "Alina Kline-Schoder"
+date: "`r Sys.Date()`"
+output: html_document
+---
+# Setup
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+library(Seurat)
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+library(circlize)
+library(scales)
+library(stringr)
+library(viridis)
+library(ComplexHeatmap)
+setwd("/Users/alinakline-schoder/Desktop/TempBigData.nosync/")
+source("/Users/alinakline-schoder/Documents/Github.nosync/Visium/AK_SpatialPlot.R")
+TaxDef<-read.csv("TxType.csv")
+#TaxDef<-rbind(TaxDef,data.frame(X=NA,TaxonomyRank1="Immune cells",TaxonomyRank2="Immune cells",TaxonomyRank3="Immune cells",TaxonomyRank4=c("X1","X2","X3","X4","X5","X6")))
+rownames(TaxDef)<-str_replace_all(TaxDef$TaxonomyRank4,' ','.')
+rownames(TaxDef)<-str_replace_all(rownames(TaxDef),'-','.')
+
+GenotypeColors<-c("#1D8DE6","#F1515E")
+#setwd("/media/alina/Backup1/Scripts/R/2022_SavedData/")
+load("Visium-Integrated.rdata")
+```
+# Normalizing scores across each cell type
+```{r}
+Meta<-brain.merge@meta.data
+# dataframe for plotting only the cell type scores
+Meta<-Meta[,!(colnames(Meta) %in% c("nCount_SCT","nFeature_SCT","nCount_Spatial","nFeature_Spatial","orig.ident","Treatment","Genotype","SCT_snn_res.0.8","SCT_snn_res.0.5","seurat_clusters","Assigned"))]
+# scale each cell to have total of 1
+Val <- Meta %>% mutate(Which = names(.)[max.col(.)])
+brain.merge$Assigned<-Val$Which
+```
+
+
+
+# Making table of average scores for each cell type
+```{r}
+MetaNew<-brain.merge@meta.data[,c("orig.ident",rownames(TaxDef))]
+Tab<-MetaNew %>% 
+  group_by(orig.ident) %>% 
+  summarise(across(where(is.numeric), mean)) 
+Tab<-as.data.frame(Tab)
+rownames(Tab)<-Tab$orig.ident
+Tab<-Tab[,!(colnames(Tab) %in% "orig.ident")]
+Tab<-as.data.frame(t(scale(as.matrix(Tab))))
+```
+
+# with complex heatmap
+```{r}
+Data<-Tab
+Type<-as.data.frame(cbind(TaxDef[rownames(Tab),]$TaxonomyRank1,TaxDef[rownames(Tab),]$TaxonomyRank2,TaxDef[rownames(Tab),]$TaxonomyRank3,rownames(TaxDef[rownames(Tab),])))
+Type<-Type[order(Type$V1,Type$V2,Type$V3,Type$V4),]
+
+Data<-Data[Type$V4,c("NaiveWT","FUSWT","Naive3xtg","FUS3xtg")]
+col_fun = colorRamp2(c(-1.5, 0, 1.5), c("blue", "#D3D3D3", "red"))
+
+
+Genotype<-recode(factor(colnames(Data)),"FUS3xtg"="AD","FUSWT"="WT","Naive3xtg"="AD","NaiveWT"="WT")
+Treatment<-recode(factor(colnames(Data)),"FUS3xtg"="FUS-BBBO","FUSWT"="FUS-BBBO","Naive3xtg"="Naive","NaiveWT"="Naive")
+
+top_anno=columnAnnotation(
+  Genotype=anno_block(gp = gpar(fill = c("white","white")),
+        labels = c("AD", "WT"),labels_gp = gpar(fontsize=8),height = unit(4,"mm")),
+  Treatment=Treatment,col=list(Treatment=c("Naive"="#FFFFFF","FUS-BBBO"="#98BDAA")),show_legend=FALSE, show_annotation_name = FALSE,border=TRUE)
+
+For<-recode(Type$V2,
+                "Neural crest-like glia"="Neural \nglia",
+                "Vascular cells"="Vascular \n cells",
+                "PNS neurons"="PNS \n neurons",
+                "Immune cells"="Immune \n cells",
+                "CNS neurons"="CNS \n neurons",
+                "CNS glia"="CNS \n glia")
+HM<-Heatmap(as.matrix(Data),
+            cluster_rows = TRUE,
+            cluster_columns = FALSE,
+            show_row_names = TRUE,
+            show_column_names = FALSE,
+            row_names_side = "left",
+        column_title = NULL,
+        top_annotation = top_anno,
+        column_split = Genotype,
+        row_title_gp = gpar(fontsize=6,family="Arial"),
+        row_title_side = "right",
+            col=viridis(1000,option="A"),
+            row_split = For,
+            row_names_gp = gpar(fontsize=6,family="Arial"),
+            column_title_gp = gpar(fontsize=6,family="Arial"),
+            show_row_dend = FALSE,
+            heatmap_legend_param = list(title=NULL,title_gp=gpar(fontsize=6,family="Arial"),labels_gp=gpar(fontsize=6),direction="horizontal",position="bottom"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+Pretty<-c("Vascular.and.leptomeningeal.cells","Oligodendrocytes","Peripheral.sensory.neurofilament.neurons","Dentate.gyrus.granule.neurons","Schwann.cells")
+```
+
+
+
+
+
+```{r}
+Cell<-Pretty[1]
+TopLimit<-10
+
+TitleSplit<-recode(factor(Pretty),
+                   "Vascular.and.leptomeningeal.cells"="Vascular and\nleptomeningeal\ncells",
+                   "Telencephalon.projecting.inhibitory.neurons"="Telencephalon\n projecting inhibitory\n neurons",
+                   "Telencephalon.projecting.excitatory.neurons"="Telencephalon\n projecting\nexcitatory neurons",
+                   "Subventricular.zone.radial.glia.like.cells"="Subventricular\n zone radial\n glia like cells",
+                   "Peripheral.sensory.neurofilament.neurons"="Peripheral sensory\nneurofilament\n neurons",
+                   "Choroid.epithelial.cells"="Choroid epithelial\ncells\n",
+                   "Vascular.endothelial.cells"="Vascular endothelial\ncells\n",
+                   "Dentate.gyrus.granule.neurons"="Dentate gyrus\ngranule neurons\n",
+                   "Schwann.cells"="Schwann cells\n\n",
+                   "Subcommissural.organ.hypendymal.cells"="Subcommissural\n organ \nhypendymal cells",
+                   "Oligodendrocytes"="Oligodendrocytes\n\n")
+names(TitleSplit)<-Pretty
+A1<-AK_SpatialPl(brain.merge,features=Cell,image.alpha = 0,stroke = NA,pt.size.factor = 3,ncol=4,plotnames = c("WT Naive","WT FUS-BBBO","AD Naive","AD FUS-BBBO",alpha=1),max.cutoff = TopLimit)&theme(legend.position = "none",plot.title = element_text(size=8))&coord_flip()
+A2<-FeaturePlot(brain.merge,features = Cell,min.cutoff = 0,max.cutoff = TopLimit)+scale_color_viridis(option="A")+guides(color=guide_colorbar(title=TitleSplit[Cell],title.theme = element_text(size=10,angle=90),title.position = "left"))+theme(plot.title = element_blank(),axis.line = element_blank(),axis.ticks = element_blank(),axis.title = element_blank(),axis.text = element_blank(),legend.key.width = unit(0.5,"mm"),legend.key.height = unit(0,"mm"),legend.position = "left",legend.text = element_blank())&scale_x_continuous(expand = c(0,0))&scale_y_continuous(expand = c(0,0))&theme(legend.box.margin = margin(0,-0.5,0,0.5,"cm"))
+
+Top1<-plot_grid(A2,A1,rel_widths = c(1,2.5),align = "h",axis = "tb",nrow = 1)
+
+Cell<-Pretty[2]
+TopLimit<-10
+A1<-AK_SpatialPl(brain.merge,features=Cell,image.alpha = 0,stroke = NA,pt.size.factor = 3,ncol=4,plotnames = c("WT Naive","WT FUS-BBBO","AD Naive","AD FUS-BBBO",alpha=1),max.cutoff = TopLimit)&theme(legend.position = "none",plot.title = element_text(size=10))&coord_flip()
+A2<-FeaturePlot(brain.merge,features = Cell,min.cutoff = 0,max.cutoff = TopLimit)+scale_color_viridis(option="A")+guides(color=guide_colorbar(title=TitleSplit[Cell],title.theme = element_text(size=8,angle=90),title.position = "left"))+theme(plot.title = element_blank(),axis.line = element_blank(),axis.ticks = element_blank(),axis.title = element_blank(),axis.text = element_blank(),legend.key.width = unit(0.5,"mm"),legend.key.height = unit(0,"mm"),legend.position = "left",legend.text = element_blank())&scale_x_continuous(expand = c(0,0))&scale_y_continuous(expand = c(0,0))&theme(legend.box.margin = margin(0,-0.5,0,0.5,"cm"))
+
+Top2<-plot_grid(A2,A1,rel_widths = c(1,2.5),align = "h",axis = "tb",nrow = 1)
+
+Cell<-Pretty[3]
+TopLimit<-5
+A1<-AK_SpatialPl(brain.merge,features=Cell,image.alpha = 0,stroke = NA,pt.size.factor = 3,ncol=4,plotnames = c("WT Naive","WT FUS-BBBO","AD Naive","AD FUS-BBBO",alpha=1),max.cutoff = TopLimit)&theme(legend.position = "none",plot.title = element_text(size=10))&coord_flip()
+A2<-FeaturePlot(brain.merge,features = Cell,min.cutoff = 0,max.cutoff = TopLimit)+scale_color_viridis(option="A")+guides(color=guide_colorbar(title=TitleSplit[Cell],title.theme = element_text(size=8,angle=90),title.position = "left"))+theme(plot.title = element_blank(),axis.line = element_blank(),axis.ticks = element_blank(),axis.title = element_blank(),axis.text = element_blank(),legend.key.width = unit(0.5,"mm"),legend.key.height = unit(0,"mm"),legend.position = "left",legend.text = element_blank())&scale_x_continuous(expand = c(0,0))&scale_y_continuous(expand = c(0,0))&theme(legend.box.margin = margin(0,-0.5,0,0.5,"cm"))
+
+Top3<-plot_grid(A2,A1,rel_widths = c(1,2.5),align = "h",axis = "tb",nrow = 1)
+
+Cell<-Pretty[4]
+TopLimit<-5
+A1<-AK_SpatialPl(brain.merge,features=Cell,image.alpha = 0,stroke = NA,pt.size.factor = 3,ncol=4,plotnames = c("WT Naive","WT FUS-BBBO","AD Naive","AD FUS-BBBO",alpha=1),max.cutoff = TopLimit)&theme(legend.position = "none",plot.title = element_text(size=10))&coord_flip()
+A2<-FeaturePlot(brain.merge,features = Cell,min.cutoff = 0,max.cutoff = TopLimit)+scale_color_viridis(option="A")+guides(color=guide_colorbar(title=TitleSplit[Cell],title.theme = element_text(size=8,angle=90),title.position = "left"))+theme(plot.title = element_blank(),axis.line = element_blank(),axis.ticks = element_blank(),axis.title = element_blank(),axis.text = element_blank(),legend.key.width = unit(0.5,"mm"),legend.key.height = unit(0,"mm"),legend.position = "left",legend.text = element_blank())&scale_x_continuous(expand = c(0,0))&scale_y_continuous(expand = c(0,0))&theme(legend.box.margin = margin(0,-0.5,0,0.5,"cm"))
+
+Top4<-plot_grid(A2,A1,rel_widths = c(1,2.5),align = "h",axis = "tb",nrow = 1)
+
+Cell<-Pretty[5]
+TopLimit<-0.75
+A1<-AK_SpatialPl(brain.merge,features=Cell,image.alpha = 0,stroke = NA,pt.size.factor = 3,ncol=4,plotnames = c("WT Naive","WT FUS-BBBO","AD Naive","AD FUS-BBBO",alpha=1),max.cutoff = TopLimit)&theme(legend.position = "none",plot.title = element_text(size=10))&coord_flip()
+A2<-FeaturePlot(brain.merge,features = Cell,min.cutoff = 0,max.cutoff = TopLimit)+scale_color_viridis(option="A")+guides(color=guide_colorbar(title=TitleSplit[Cell],title.theme = element_text(size=8,angle=90),title.position = "left"))+theme(plot.title = element_blank(),axis.line = element_blank(),axis.ticks = element_blank(),axis.title = element_blank(),axis.text = element_blank(),legend.key.width = unit(0.5,"mm"),legend.key.height = unit(0,"mm"),legend.position = "left",legend.text = element_blank())&scale_x_continuous(expand = c(0,0))&scale_y_continuous(expand = c(0,0))&theme(legend.box.margin = margin(0,-0.5,0,0.5,"cm"))
+
+Top5<-plot_grid(A2,A1,rel_widths = c(1,2.5),align = "h",axis = "tb",nrow = 1)
+
+```
+
+```{r}
+Full<-plot_grid(Top1,Top2,Top3,Top4,Top5,ncol = 1)
+HM_Ready<-plot_grid(grid.grabExpr(draw(HM,heatmap_legend_side="bottom")))
+plot_grid(HM_Ready,Full,ncol=2,rel_widths = c(1,2),labels = c("a","b"))
+ggsave("TryingThisYo.png",width=11,height=8.5,units = "in",bg="white")
+```
+

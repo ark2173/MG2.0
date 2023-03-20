@@ -1,0 +1,320 @@
+---
+title: "LoadingData"
+author: "Alina Kline-Schoder"
+date: "`r Sys.Date()`"
+output: html_document
+---
+# Cluster 0 and Cluster 1
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+library(ggnewscale)
+library(Seurat)
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+library(circlize)
+library(scales)
+library(stringr)
+library(viridis)
+library(patchwork)
+library(ComplexHeatmap)
+library(ggrepel)
+library(ggpmisc)
+setwd("/media/alina/Backup1/Papers/MG2.0/Data/RData/")
+source("/media/alina/Backup1/Papers/MG2.0/Scripts/RAnalysis/Functions/AK_SpatialPlot.R")
+source("/media/alina/Backup1/Papers/MG2.0/Scripts/RAnalysis/Functions/Ontology.R")
+
+load("Vis1-LoadingVisCell2Location.RData")
+load("Seq1-Microglia.RData")
+TaxDef<-read.csv("TaxRef.csv")
+TaxDef<-rbind(TaxDef,data.frame(X=NA,TaxonomyRank1="Immune cells",TaxonomyRank2="Immune cells",TaxonomyRank3="Immune cells",TaxonomyRank4=c("X0","X1","X2","X3","X0.IAM","X1.IAM","X5","X6"),AKTax="Immune cells"))
+rownames(TaxDef)<-str_replace_all(TaxDef$TaxonomyRank4,' ','.')
+rownames(TaxDef)<-str_replace_all(rownames(TaxDef),'-','.')
+TaxDef[c("Non.glutamatergic.neuroblasts","Glutamatergic.neuroblasts"),"TaxonomyRank2"]<-"Neuroblast"
+TaxDef[TaxDef$TaxonomyRank1=="Glia","TaxonomyRank2"]<-"Glia"
+
+MG<-c("X0","X1","X2","X3","X4","X5","X8","Perivascular.macrophages")
+Microglia$Treatment<-factor(Microglia$Treatment,levels = c("Naive","FUS+MB","FUS-BBBO","FUS"))
+Microglia$Full<-factor(Microglia$Full,levels=c("WT Naive","AD Naive","WT FUS+MB","AD FUS+MB","WT FUS-BBBO","AD FUS-BBBO","WT FUS","AD FUS"))
+
+ColorsClusters<-c("#C13A13",
+                  "#DD9D56",
+                  "#EBCE78", # green
+                  "#F8FF99", # green
+                  "#CEE790", # IAM
+                  "#A4CF86",
+                  "#509F72")# DAM
+ColorsGroup<-c("white","#81A4CD","#BC6290","#9F83B3")
+ColorsLines<-c("black","#81375D")
+
+col_fun = colorRamp2(c(-2, 0, 2), c("blue", "#D3D3D3", "red"))
+brain.merge$orig.ident<-factor(brain.merge$orig.ident)
+brain.merge$Genotype<-recode(brain.merge$orig.ident,
+                             "NaiveWT"="WT",
+                             "Naive3xtg"="AD",
+                             "FUSWT"="WT",
+                             "FUS3xtg"="AD")
+
+brain.merge$Treatment<-recode(brain.merge$orig.ident,
+                             "NaiveWT"="Naive",
+                             "Naive3xtg"="Naive",
+                             "FUSWT"="FUS-BBBO",
+                             "FUS3xtg"="FUS-BBBO")
+TaxDef$AKTax<-factor(TaxDef$AKTax,levels=c("BBB","BCSFB","Glia","Neurons"))
+```
+# Both
+```{r}
+ColorsClusters[c(1:6)]<-"gray"
+
+Feat<-FeaturePlot(Microglia,features = c("Cd9","Cd63","Ifitm3","B2m"))&theme(legend.position = "none")&theme(axis.ticks = element_blank(),axis.text = element_blank())&theme(axis.title = element_blank(),plot.title = element_text(size=10,face = "plain"))
+UMAPAll<-DimPlot(Microglia,group.by = "seurat_clusters",label=F,cols=ColorsClusters,label.box = F)+theme(legend.position = "none",plot.title = element_blank())+theme(axis.ticks = element_blank(),axis.text = element_blank())+theme(axis.title = element_blank())
+
+```
+
+
+```{r}
+Vis6<-AK_SpatialPl(brain.merge,features="X6",image.alpha = 0,stroke = NA,pt.size.factor = 3,ncol=4,plotnames = c("WT Naive","WT FUS-BBBO","AD Naive","AD FUS-BBBO",alpha=1),max.cutoff = 1.2)&theme(legend.position = "none",plot.title = element_text(size=8))&coord_flip()
+```
+
+```{r}
+ClusMark<-FindMarkers(Microglia,ident.1 = "6")
+xlab<-bquote(~Log[2]~"FC")
+ylab<-bquote(~Log[10]~italic(P))
+ClusMark$color<-"black"
+ClusMark[ClusMark$p_val_adj<0.05&abs(ClusMark$avg_log2FC)>1,]$color<-ColorsClusters[7]
+ClusMark$lab<-rownames(ClusMark)
+ClusMark[!(ClusMark$lab %in% c("Cd9","Cd63","Lpl","P2ry12")),]$lab<-NA
+
+Volcano6<-ggplot(ClusMark,aes(x=avg_log2FC,y=-log10(p_val_adj)))+geom_point(color=ClusMark$color,size=0.5)+theme_bw()+xlab(xlab)+ylab(ylab)+geom_label_repel(aes(label=lab),size=3,color="black")+theme(axis.title = element_text(size=10),axis.text = element_text(size=8))+theme(panel.grid = element_blank())
+
+
+ClusMark_Filt<-ClusMark[ClusMark$avg_log2FC>0,]
+ClusMark_Filt<-ClusMark_Filt[ClusMark_Filt$p_val_adj<0.05,]
+Annotation<-GO_Search(Microglia,ClusMark_Filt)
+Annotation6<-Annotation[Annotation$PVal_Fis<0.05|Annotation$PVal_KS<0.05,]
+
+```
+# HM Changes
+```{r}
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="Naive3xtg",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+SigAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$P)
+Type<-TaxDef[rownames(CorAll),]
+CorNaiveAD<-CorAll[rownames(CorAll) %in% c("X6"),]
+SigNaiveAD<-SigAll[rownames(CorAll) %in% c("X6"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="NaiveWT",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+SigAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$P)
+Type<-TaxDef[rownames(CorAll),]
+CorNaiveWT<-CorAll[rownames(CorAll) %in% c("X6"),]
+SigNaiveWT<-SigAll[rownames(CorAll) %in% c("X6"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="FUSWT",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+SigAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$P)
+Type<-TaxDef[rownames(CorAll),]
+CorFUSWT<-CorAll[rownames(CorAll) %in% c("X6"),]
+SigFUSWT<-SigAll[rownames(CorAll) %in% c("X6"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="FUS3xtg",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+SigAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$P)
+Type<-TaxDef[rownames(CorAll),]
+CorFUSAD<-CorAll[rownames(CorAll) %in% c("X6"),]
+SigFUSAD<-SigAll[rownames(CorAll) %in% c("X6"),]
+
+FullCor<-as.data.frame(rbind(CorNaiveWT,CorFUSWT,CorNaiveAD,CorFUSAD))
+rownames(FullCor)<-c("WT Naive","WT FUS-BBBO","AD Naive","AD FUS-BBBO")
+Treatment<-grepl("Naive",rownames(FullCor))
+library(pander)
+
+
+A<-str_replace(str_replace(add.significance.stars(SigNaiveWT),' ',''),'NA','')
+B<-str_replace(str_replace(add.significance.stars(SigFUSWT),' ',''),'NA','')
+C<-str_replace(str_replace(add.significance.stars(SigNaiveAD),' ',''),'NA','')
+D<-str_replace(str_replace(add.significance.stars(SigFUSAD),' ',''),'NA','')
+FullSig<-rbind(A,B,C,D)
+FullSig[is.na(FullSig)]<-''
+top=columnAnnotation(Genotype=anno_block(gp = gpar(fill = c("white","white")),labels = c("WT", "AD"),labels_gp = gpar(fontsize=8),height = unit(4,"mm")), Treatment=Treatment,col=list(Treatment=c("TRUE"=ColorsGroup[1],"FALSE"=ColorsGroup[3])),show_legend=FALSE, show_annotation_name = FALSE,border=TRUE)
+TypeSub<-TaxDef[!(TaxDef$TaxonomyRank2=="Immune cells"),]
+FullCor<-as.matrix(FullCor[,colnames(FullCor) %in% rownames(TypeSub)])
+
+TypeSub<-TypeSub[colnames(FullCor),]
+TypeSub$TaxonomyRank2<-recode(TypeSub$TaxonomyRank2,
+  "Vascular cells"="Vascular")
+
+top=columnAnnotation(
+  Genotype=anno_block(gp = gpar(fill = c("white","white")),
+                      labels = c("WT", "AD"),
+                      labels_gp = gpar(fontsize=8),
+                      height = unit(4,"mm")),
+  Treatment=anno_text(x = c("Naive","FUS-BBBO","Naive","FUS-BBBO"),
+                      which = "column",
+                      rot=0,just = "center",location = 0.5,
+                      height = unit(4,"mm"),
+                      gp = gpar(fontsize=8,fill=c("white",ColorsGroup[3],"white",ColorsGroup[3]),
+                                border="black")))
+                                         
+
+ht_opt$DENDROGRAM_PADDING = unit(7.5, "mm")
+
+HM<-Heatmap(t(FullCor),
+  cluster_rows = TRUE,
+  cluster_columns = FALSE,
+  cluster_row_slices = FALSE,
+  cluster_column_slices = FALSE,
+  show_row_names = TRUE,
+  show_column_names = FALSE,
+  top_annotation = top,
+  row_dend_side = "left",
+  row_title_side = "right",
+  row_title_gp = gpar(fontsize=8,family="Arial"),
+  column_title = NULL,
+  column_title_gp=gpar(fontsize=8,family="Arial"),
+  row_names_side = "left",
+  width = ncol(t(FullCor))*unit(1.65,"cm"),
+  column_split = c(rep("A",2),rep("B",2)),
+  row_split = TypeSub$AKTax,
+  col=viridis(1000,option="A"),
+  name = " ", 
+  heatmap_legend_param = list(title=NULL,labels_gp=gpar(fontsize=6),direction="horizontal"),
+  row_names_gp = gpar(fontsize=6,family="Arial"),
+  cell_fun = function(j, i, x, y, width, height, fill) {
+  grid.text(t(as.matrix(FullSig))[i, j], x, y, gp = gpar(fontsize = 8,col="white"))})
+```
+
+```{r}
+Means<-cbind(rowMeans(FullCor[,rownames(TypeSub[TypeSub$AKTax=="Neurons",])]),
+rowMeans(FullCor[,rownames(TypeSub[TypeSub$AKTax=="BBB",])]),
+rowMeans(FullCor[,rownames(TypeSub[TypeSub$AKTax=="Glia",])]),
+rowMeans(FullCor[,rownames(TypeSub[TypeSub$AKTax=="BCSFB",])]))
+colnames(Means)<-c("Neurons","BBB","Glia","BCSFB")
+Means<-t(Means)
+Max<-cbind(rowMax(FullCor[,rownames(TypeSub[TypeSub$AKTax=="Neurons",])]),
+rowMax(FullCor[,rownames(TypeSub[TypeSub$AKTax=="BBB",])]),
+rowMax(FullCor[,rownames(TypeSub[TypeSub$AKTax=="Glia",])]),
+rowMax(FullCor[,rownames(TypeSub[TypeSub$AKTax=="BCSFB",])]))
+colnames(Max)<-c("Neurons","BBB","Glia","BCSFB")
+Max<-t(Max)
+```
+
+
+
+
+
+```{r}
+tab<-as.data.frame(table(Microglia$Full,Microglia$seurat_clusters))
+tot<-as.data.frame(table(Microglia$Full))
+tab$Freq_Norm<-tab$Freq/tot[tab$Var1,]$Freq*100
+tab$Genotype<-recode(tab$Var1,"WT Naive"="WT","AD Naive"="AD","WT FUS"="WT","AD FUS"="AD","WT FUS+MB"="WT","AD FUS+MB"="AD","WT FUS-BBBO"="WT","AD FUS-BBBO"="AD")
+tab$Treatment<-recode(tab$Var1,"WT Naive"="Naive","AD Naive"="Naive","WT FUS"="FUS","AD FUS"="FUS","WT FUS+MB"="FUS+MB","AD FUS+MB"="FUS+MB","WT FUS-BBBO"="FUS-BBBO","AD FUS-BBBO"="FUS-BBBO")
+
+tab<-tab[tab$Var2=="6",]
+tab<-tab[tab$Treatment %in% c("Naive","FUS-BBBO"),]
+BP<-ggplot(tab,aes(y=Freq_Norm,x=Treatment))+geom_bar(stat="identity",fill=ColorsClusters[7],position = position_stack(reverse = TRUE))+scale_x_discrete(expand = c(0,0))+geom_tile(aes(x=Treatment,y=-0.1,fill=Treatment),height=0.2,color="black")+scale_fill_manual(values=ColorsGroup[c(1,3)])+facet_grid(.~Genotype)+theme_bw()+ylab("Cluster (%)")+theme(legend.position = "none",axis.title.x = element_blank())+scale_y_continuous(expand = c(0,0),limits = c(-0.2,4))+theme(strip.background = element_rect(fill=c("white")),plot.margin = margin(0.1,0.1,0,0.5,"cm"),axis.title.y = element_text(size = 10),axis.text = element_text(size=8),axis.text.x = element_text(angle=45,hjust=1),panel.grid = element_blank())
+```
+
+```{r}
+YAxis<-c("Oligodendrocyte.precursor.cells","Enteric.neurons","Glutamatergic.neuroblasts")
+Cells<-c("X6",YAxis)
+
+# X0 and X1 v Glutamergic neuroblasts, 
+# X5 v Cerebellum neurons, 
+Long<-cbind(brain.merge@meta.data[,Cells],brain.merge$Genotype,brain.merge$Treatment)
+colnames(Long)<-c(Cells,"Genotype","Treatment")
+formula <- y ~ x
+Long$Genotype<-factor(recode(Long$Genotype,"3xtg"="AD"),levels=c("WT","AD"))
+Long$Treatment<-factor(recode(Long$Treatment,"FUS"="FUS-BBBO"),levels=c("Naive","FUS-BBBO"))
+library(tidyr)
+Longer<-pivot_longer(Long,cols=YAxis)
+
+#Longer$name<-recode(Longer$name,"Peripheral.sensory.peptidergic.neurons"="Peripheral sensory\npeptidergic neurons","Cerebellum.neurons"="Cerebellum\n neurons","Satellite.glia"="Satellite glia","Cholinergic.and.monoaminergic.neurons"="Cholinergic and\nmonoaminergic\nneurons")
+Longer_AD<-Longer[Longer$Genotype=="AD",]
+color<-recode(Longer_AD$Treatment,"Naive"="black","FUS-BBBO"=ColorsGroup[3])
+shapes<-as.numeric(recode(Longer_AD$Genotype,"AD"=15,"WT"=16))
+Longer_AD$Color<-color
+Longer_AD$name<-recode(factor(Longer_AD$name),"Oligodendrocyte.precursor.cells"="Oligodendrocyte\nprecursor cells",
+                       "Enteric.neurons"="Enteric neurons",
+                       "Glutamatergic.neuroblasts"="Glutamatergic\nneuroblasts"
+                       )
+CorrSpec<-ggplot(Longer_AD,aes(x=X6,y=value,color=Color))+geom_point(shape=shapes,size=0.5,alpha=0.5,color=color)+facet_grid(name~Genotype,scales = "free")+geom_smooth(method="lm",fullrange=TRUE,size=0.5,se=FALSE)+ stat_poly_eq(aes(label = paste(..rr.label..)), label.x = c(0.1), label.y = c(0.8,0.9),formula = formula, parse = TRUE, size = 2.5) + theme_bw()+theme(legend.position = "none")+coord_cartesian(expand=FALSE,xlim = c(0,2))+theme(axis.title = element_text(size=8),panel.background = element_rect(fill="white"),panel.grid = element_blank(),strip.background = element_rect(fill="white"),axis.title.y = element_blank(),strip.text = element_text(size = 6))+scale_color_manual(values=ColorsLines)+theme(axis.line.x = element_line(color=ColorsClusters[7],size=2),plot.margin = margin(0.25,0.25,0.25,0.5,"cm"))
+```
+
+
+```{r}
+t<-data.frame(x=1:10,y=1:10)
+Leg2<-get_legend(ggplot(t,aes(x=x,y=x,fill=x/10))+geom_point()+scale_fill_viridis(guide = "colourbar", limits = c(0,1),breaks=c(0,1),option="D")+guides(fill=guide_colorbar(title="DAM",title.hjust = 0.5,direction = "vertical",barwidth = unit(1.5,"mm"),barheight = unit(2,"cm"),title.position = "right",label.position = "left"))+theme(legend.text = element_text(size=6),legend.title = element_text(angle=270,size=8)))
+
+```
+
+# Ontology plot
+```{r}
+Terms<-c("synapse","taxis","macrophage migration","regulation of macrophage migration","phagocytic vesicle","cell communication","postsynapse")
+
+OntoPlotdata<-Annotation6[Annotation6$Term %in% Terms,]
+KSLab<-bquote(~-Log[10] ~ italic(P[KS]))
+FisLab<-bquote(italic(P[Fis]))
+OntoPlotdata$PCT<-OntoPlotdata$Significant/OntoPlotdata$Annotated*100
+library(scales) 
+
+OntoPlotdata$PVal_Adj<-(-log(OntoPlotdata$PVal_KS))
+OntoPlotdata<-OntoPlotdata[order(OntoPlotdata$PVal_Adj),]
+OntoPlotdata$Term<-factor(OntoPlotdata$Term,levels = OntoPlotdata$Term)
+OntoPlotdata$Term<-recode(OntoPlotdata$Term,
+                          "macrophage migration"="macrophage\nmigration",
+                          "postsynapse"="post-\nsynapse",
+                          "phagocytic vesicle"="phagocytic\nvesicle")
+
+OntoPlotdata$TextColor<-c("white","black","black","white","white")
+OntoPlot<-ggplot(OntoPlotdata,aes(y=Term,x=PVal_Adj,fill=PCT))+geom_bar(stat="identity") + xlab(KSLab) + geom_text(aes(label=Term,x=PVal_Adj-0.05),color=OntoPlotdata$TextColor,hjust=1,size=1.75) +
+  theme_minimal() + scale_fill_viridis() + guides(fill=guide_colorbar(title = "Genes (%)",title.position = "top"))+coord_cartesian(expand=FALSE)+
+  theme(legend.position = c(0.6,0.2),
+        legend.key.height = unit(2,"mm"),
+        legend.key.width = unit(0.4,"cm"),
+        legend.direction = "horizontal",
+        plot.margin = margin(0.1,0,0,0.5,"cm"),
+        legend.text = element_text(size=8),
+        legend.title = element_text(size=8),
+        axis.title.x = element_text(size = 8),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(size=8),
+        axis.line = element_line(size=0.25,color="black"),
+        axis.title.y = element_blank(),
+        panel.grid = element_blank())
+```
+
+
+# Validation bar chart
+```{r}
+library(ggpubr)
+Data<-read.csv('/media/alina/Backup1/Papers/MG2.0/Data/ValidationImaging/VisiumValidation/VisiumValidation_Quant/AD_DAMofBCSFB-Table 1.csv')
+Data$Treatment<-recode(factor(Data$Group,levels=c("Naive","FB")),"FB"="FUS-BBBO")
+my_comparisons <- list(c("Naive", "FUS-BBBO"))
+col<-c(ColorsGroup[1],ColorsGroup[3])
+BPVal<-ggplot(Data,aes(x=Treatment,y=Percentage))+geom_boxplot(color="black",aes(fill=Treatment))+geom_point(shape=21,aes(fill=Treatment),color="black")+ stat_compare_means(comparisons = my_comparisons,method = "t.test",size=2,label.y = 18)+ylab("DAM (% of BCSFB)")+theme_bw()+theme(legend.position = "none")+scale_fill_manual(values=col)+theme(axis.text.x = element_text(size=8),axis.title.x=element_blank(), axis.text.y = element_text(size=8),panel.grid = element_blank())+theme(plot.margin = margin(0.5,0.5,0.5,0.5,"cm"))+ylim(0,20)
+```
+
+
+# Putting it together
+```{r}
+HM_Ready<-plot_grid(grid.grabExpr(draw(HM,heatmap_legend_side="bottom")))
+VisFull<-plot_grid(Vis6,Leg2,nrow=1,rel_widths = c(3,0.3))
+Top<-plot_grid(UMAPAll+theme(plot.margin = margin(0.25,0,0,0.25,"cm")),Volcano6+theme(legend.position = "none",axis.text = element_text(size=8),axis.title = element_text(size=10),plot.margin = margin(0.25,0,0,0.25,"cm")),VisFull,nrow=1,labels = c("a","b","c"),align = "h",axis = "b",rel_widths = c(1,1,2.5))
+
+Bars<-plot_grid(BP,OntoPlot,nrow=1,rel_widths = c(0.75,1),align = "h",axis = "b",labels = c("d","e"))
+Left<-plot_grid(Bars,CorrSpec,nrow=2,rel_heights = c(1,2.5),labels = c("","f"))
+
+Bottom<-plot_grid(Left,HM_Ready,nrow=1,rel_widths = c(1,1.6),labels = c("","g"))
+
+LastRow<-plot_grid(ggplot() + theme_void(),BPVal,nrow=1,rel_widths = c(2.5,1),labels = c("h","i"))
+
+Full<-plot_grid(Top,Bottom,LastRow,rel_heights = c(1,3.25,1.5),nrow=3)
+
+ggsave("/media/alina/Backup1/Papers/MG2.0/Figures/DAM.png",width = 8.5,height = 10,units = "in",bg="white")
+```
+
+
+
+

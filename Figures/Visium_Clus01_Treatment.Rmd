@@ -1,0 +1,198 @@
+---
+title: "LoadingData"
+author: "Alina Kline-Schoder"
+date: "`r Sys.Date()`"
+output: html_document
+---
+# Cluster 0 and Cluster 1
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+library(ggnewscale)
+library(Seurat)
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+library(circlize)
+library(scales)
+library(stringr)
+library(viridis)
+library(patchwork)
+library(ComplexHeatmap)
+library(ggrepel)
+
+source("/media/alina/Backup1/Scripts/R/Visium/Ontology.R")
+setwd("/media/alina/Backup1/Scripts/R/2022_SavedData/")
+source("/media/alina/Backup1/Scripts/R/Visium/ScatterPlot_AKS.R")
+source("/media/alina/Backup1/Scripts/R/Visium/Treemap_AKS.R")
+source("/media/alina/Backup1/Scripts/R/Visium/AK_SpatialPlot.R")
+load("Visium-Integrated.rdata")
+load("3-Microglia.rdata")
+MG<-c("X0","X1","X2","X3","X4","X5","X8","Perivascular.macrophages")
+Microglia$Treatment<-factor(Microglia$Treatment,levels = c("Naive","FUS+MB","FUS-BBBO","FUS"))
+Microglia$Full<-factor(Microglia$Full,levels=c("WT Naive","AD Naive","WT FUS+MB","AD FUS+MB","WT FUS-BBBO","AD FUS-BBBO","WT FUS","AD FUS"))
+DefaultAssay(Microglia) <- "integrated"
+Microglia <- ScaleData(Microglia, verbose = FALSE)
+Microglia <- RunPCA(Microglia, npcs = 50, verbose = FALSE)
+Microglia <- RunUMAP(Microglia, reduction = "pca", dims = 1:15)
+Microglia <- FindNeighbors(Microglia, dims = 1:15)
+Microglia <- FindClusters(Microglia, resolution = 0.5)
+
+TaxDef<-read.csv("/media/alina/Backup1/Scripts/R/2022_NewSeq/TaxRef.csv")
+TaxDef<-rbind(TaxDef,data.frame(X=NA,TaxonomyRank1="Immune cells",TaxonomyRank2="Immune cells",TaxonomyRank3="Immune cells",TaxonomyRank4=c("X0","X1","X2","X3","X4","X5","X6")))
+
+#TaxDef<-rbind(TaxDef,data.frame(X=NA,TaxonomyRank1="Immune cells",TaxonomyRank2="Immune cells",TaxonomyRank3="Immune cells",TaxonomyRank4=c("X1","X2","X3","X4","X5","X6")))
+rownames(TaxDef)<-str_replace_all(TaxDef$TaxonomyRank4,' ','.')
+rownames(TaxDef)<-str_replace_all(rownames(TaxDef),'-','.')
+ColorsClusters<-c("#54478c", # purple
+                  "#2c699a",
+                  "#0db39e", # green
+                  "#16db93", # green
+                  "#efea5a", # yellow
+                  "#f1c453",
+                  "#f29e4c")
+ColorsGroup<-c("#FFFFFF","#FEC5BB","#98BDAA","#F9AC4D")
+col_fun = colorRamp2(c(-2, 0, 2), c("blue", "#D3D3D3", "red"))
+
+```
+# Both
+```{r}
+ColorsClusters<-c("#54478c", # 0
+                  "#2c699a", # 1
+                  "gray", # green
+                  "gray", # green
+                  "gray", # yellow
+                  "gray",
+                  "gray")
+Feat<-FeaturePlot(Microglia,features = c("Rnase4","Arsb","Ubc","C5ar2"))&theme(legend.position = "none")&theme(axis.ticks = element_blank(),axis.text = element_blank())&theme(axis.title = element_blank(),plot.title = element_text(size=10))
+UMAPAll<-DimPlot(Microglia,group.by = "seurat_clusters",label=T,cols=ColorsClusters,label.box = T)+theme(legend.position = "none",plot.title = element_blank())+theme(axis.ticks = element_blank(),axis.text = element_blank())+theme(axis.title = element_blank())
+
+```
+
+# HM Changes
+```{r}
+Matrix<-brain.merge@meta.data[brain.merge$Treatment=="Naive",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+SigAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$P)
+Type<-TaxDef[rownames(CorAll),]
+CorNaive<-CorAll[rownames(CorAll) %in% c("X0","X1"),]
+SigNaive<-SigAll[rownames(CorAll) %in% c("X0","X1"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$Treatment=="FUS",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+SigAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$P)
+Type<-TaxDef[rownames(CorAll),]
+CorFUS<-CorAll[rownames(CorAll) %in% c("X0","X1"),]
+SigFUS<-SigAll[rownames(CorAll) %in% c("X0","X1"),]
+
+FullCor<-as.data.frame(rbind(CorNaive,CorFUS))
+Clus<-c(rownames(CorNaive),rownames(CorFUS))
+Type<-factor(c(rep("Naive",2),rep("FUS-BBBO",2)),levels=c("Naive","FUS-BBBO"))
+FullCor<-FullCor[order(Clus,Type),]
+ClusNew<-Clus[order(Clus,Type)]
+TypeNew<-Type[order(Clus,Type)]
+Treatment<-grepl("Naive",TypeNew)
+library(pander)
+
+
+
+FullSig<-rbind(SigNaive,SigFUS)
+FullSig<-FullSig[order(Clus,Type),]
+FullSig[is.na(FullSig)]<-''
+FullSig<-apply(FullSig,c(1,2),add.significance.stars)
+
+top=columnAnnotation(Cluster=anno_block(gp = gpar(fill = ColorsClusters),labels = c("X0", "X1"),labels_gp = gpar(fontsize=8,col="white"),height = unit(4,"mm")), Treatment=Treatment,col=list(Treatment=c("TRUE"="#FFFFFF","FALSE"="#98BDAA")),show_legend=FALSE, show_annotation_name = FALSE,border=TRUE)
+
+TypeSub<-TaxDef[!(TaxDef$TaxonomyRank2=="Immune cells"),]
+FullCor<-as.matrix(FullCor[,colnames(FullCor) %in% rownames(TypeSub)])
+TypeSub[c("Non.glutamatergic.neuroblasts","Glutamatergic.neuroblasts"),"TaxonomyRank2"]<-"Neuroblast"
+TypeSub[grepl("Telencephalon",TypeSub$TaxonomyRank3),"TaxonomyRank2"]<-"Telencephalon"
+TypeSub<-TypeSub[colnames(FullCor),]
+TypeSub$TaxonomyRank2<-recode(TypeSub$TaxonomyRank2,
+  "Vascular cells"="Vascular",
+  "Neural crest-like glia"="Neural crest-like glia",
+  "Neuroblast"="Neuroblast",
+  "CNS neurons"="CNS neurons",
+  "PNS neurons"="PNS neurons",
+  "CNS glia"="CNS glia")
+ht_opt$DENDROGRAM_PADDING = unit(7.5, "mm")
+HMChanges<-Heatmap(t(FullCor),
+  cluster_rows = TRUE,
+  cluster_columns = FALSE,
+  #custer_row_slices = TRUE,
+  cluster_column_slices = FALSE,
+  show_row_names = TRUE,
+  #row_labels = Names,
+  show_column_names = FALSE,
+  top_annotation = top,
+  row_dend_side = "left",
+  row_title_side = "right",
+  row_title_gp = gpar(fontsize=8,family="Arial"),
+  column_title = NULL,
+  column_title_gp=gpar(fontsize=8,family="Arial",col="white"),
+  row_names_side = "left",
+  column_split = c(rep("X0",2),rep("X1",2)),
+  row_split = TypeSub$TaxonomyRank2,
+  col=viridis(1000,option="A"),
+  name = " ", heatmap_legend_param = list(title=NULL,title_gp=gpar(fontsize=6,family="Arial"),labels_gp=gpar(fontsize=6),direction="horizontal",position="bottom"),
+  row_names_gp = gpar(fontsize=6,family="Arial"),
+  cell_fun = function(j, i, x, y, width, height, fill) {
+  grid.text(t(as.matrix(FullSig))[i, j], x, y, gp = gpar(fontsize = 5,col="white"))})
+```
+
+
+
+# Correlation 
+```{r}
+Cells<-c("X0","X1","X2","X3","X4","X5","X6","Glutamatergic.neuroblasts","Cerebellum.neurons","Enteric.neurons","Peripheral.sensory.peptidergic.neurons","Sympathetic.cholinergic.neurons")
+
+# X0 and X1 v Glutamergic neuroblasts, 
+# X5 v Cerebellum neurons, 
+Long<-cbind(brain.merge@meta.data[,Cells],brain.merge$Genotype,brain.merge$Treatment)
+colnames(Long)<-c(Cells,"Genotype","Treatment")
+formula <- y ~ x
+Long$Genotype<-factor(recode(Long$Genotype,"3xtg"="AD"),levels=c("WT","AD"))
+Long$Treatment<-factor(recode(Long$Treatment,"FUS"="FUS-BBBO"),levels=c("Naive","FUS-BBBO"))
+Longer<-pivot_longer(Long,cols=c("Glutamatergic.neuroblasts","Cerebellum.neurons","Enteric.neurons","Sympathetic.cholinergic.neurons"))
+shapes<-as.numeric(recode(Longer$Genotype,"AD"=22,"WT"=21))
+color<-recode(Longer$Treatment,"Naive"="#FFFFFF","FUS-BBBO"="#98BDAA")
+formula <- y ~ x
+colorborder<-color
+colorborder<-recode(colorborder,"#FFFFFF"="black")
+Longer$Color<-color
+Longer$name<-recode(Longer$name,
+                    "Cerebellum.neurons"="Cerebellum neurons",
+                    "Enteric.neurons"="Enteric neurons",
+                    "Glutamatergic.neuroblasts"="Glutamatergic neuroblasts")
+CorrX0<-ggplot(Longer,aes(x=X0,y=value,color=Color))+geom_point(fill=color,color=colorborder,shape=shapes,size=0.5,alpha=0.5)+facet_grid(name~.)+geom_smooth(method="lm",fullrange=TRUE,size=0.5,se=FALSE)+ stat_poly_eq(aes(label = paste(..rr.label..)), label.x = c(0.1), label.y = c(0.8,0.9),formula = formula, parse = TRUE, size = 2.5) + theme_bw()+theme(legend.position = "none")+coord_cartesian(expand=FALSE)+theme(axis.title = element_text(size=8),panel.background = element_rect(fill="white"),panel.grid = element_blank(),strip.background = element_rect(fill="white"),axis.title.y = element_blank(),strip.text = element_text(size = 6))+scale_color_manual(values=c("black","#60786c"))+theme(axis.line.x = element_line(color="#54478c",size=2),plot.margin = margin(0.25,0,0.25,0.25,"cm"))
+
+
+CorrX1<-ggplot(Longer,aes(x=X1,y=value,color=Color))+geom_point(fill=color,color=colorborder,shape=shapes,size=0.5,alpha=0.5)+facet_grid(name~.)+geom_smooth(method="lm",fullrange=TRUE,size=0.5,se=FALSE)+ stat_poly_eq(aes(label = paste(..rr.label..)), label.x = c(0.1), label.y = c(0.8,0.9),formula = formula, parse = TRUE, size = 2.5) + theme_bw()+theme(legend.position = "none")+coord_cartesian(expand=FALSE)+theme(axis.title = element_text(size=8),panel.background = element_rect(fill="white"),panel.grid = element_blank(),strip.background = element_rect(fill="white"),axis.title.y = element_blank(),strip.text = element_text(size = 6))+scale_color_manual(values=c("black","#60786c"))+theme(axis.line.x = element_line(color="#2c699a",size=2),plot.margin = margin(0.25,0,0.25,0.25,"cm"))
+```
+
+
+
+
+
+
+# putting it all together
+```{r}
+#Feat
+#UMAPAll
+#Corr1
+#Corr2
+#Vis0
+#Vis1
+#Vis3
+#Vis4
+
+HM_Ready<-plot_grid(grid.grabExpr(draw(HMChanges,heatmap_legend_side="bottom")))
+
+A<-plot_grid(UMAPAll,Feat,nrow=1,labels = c("a","b"))
+Corrs<-plot_grid(CorrX0,CorrX1,nrow=1,labels = c("c","d"),align = "v",axis = "lr")
+C<-plot_grid(A,Corrs,nrow=2,rel_heights = c(1,2))
+D<-plot_grid(C,HM_Ready,nrow=1,labels = c("","i"))
+
+#Full<-plot_grid(D,VisFull,nrow=2,rel_heights = c(3,1))
+ggsave("/media/alina/Backup1/Scripts/R/2022_SavedData/Clus01.png",width = 8.5,height =8.5,units = "in",bg="white")
+```

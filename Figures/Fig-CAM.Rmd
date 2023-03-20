@@ -1,0 +1,202 @@
+---
+title: "CAM Figure"
+author: "Alina Kline-Schoder"
+date: "`r Sys.Date()`"
+output: html_document
+---
+# CAM
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+library(Seurat)
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+library(circlize)
+library(scales)
+library(stringr)
+library(viridis)
+library(patchwork)
+library(ComplexHeatmap)
+library(ggrepel)
+
+setwd("/media/alina/Backup1/Papers/MG2.0/Data/RData/")
+source("/media/alina/Backup1/Papers/MG2.0/Scripts/RAnalysis/Functions/AK_SpatialPlot.R")
+load("Vis1-LoadingVisCell2Location.RData")
+load("Seq1-Microglia.RData")
+TaxDef<-read.csv("TaxRef.csv")
+rownames(TaxDef)<-str_replace_all(TaxDef$TaxonomyRank4,' ','.')
+rownames(TaxDef)<-str_replace_all(rownames(TaxDef),'-','.')
+
+ColorsClusters<-c("#C13A13",
+                  "#DD9D56",
+                  "#EBCE78", # green
+                  "#F8FF99", # green
+                  "#CEE790", # IAM
+                  "#A4CF86",
+                  "#509F72")# DAM
+ColorsGroup<-c("white","#81A4CD","#BC6290","#9F83B3")
+ColorsLines<-c("black","#81375D")
+brain.merge$orig.ident<-factor(brain.merge$orig.ident)
+brain.merge$Genotype<-recode(brain.merge$orig.ident,
+                             "NaiveWT"="WT",
+                             "Naive3xtg"="AD",
+                             "FUSWT"="WT",
+                             "FUS3xtg"="AD")
+
+brain.merge$Treatment<-recode(brain.merge$orig.ident,
+                             "NaiveWT"="Naive",
+                             "Naive3xtg"="Naive",
+                             "FUSWT"="FUS-BBBO",
+                             "FUS3xtg"="FUS-BBBO")
+
+TaxDef$AKTax<-factor(TaxDef$AKTax,levels=c("BBB","BCSFB","Glia","Neurons"))
+```
+
+
+# CAM heatmap
+```{r}
+library(gtools)
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="Naive3xtg",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+SigAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$P)
+Type<-TaxDef[rownames(CorAll),]
+CorNaiveAD<-CorAll[rownames(CorAll) %in% c("Perivascular.macrophages"),]
+SigNaiveAD<-SigAll[rownames(CorAll) %in% c("Perivascular.macrophages"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="NaiveWT",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+SigAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$P)
+Type<-TaxDef[rownames(CorAll),]
+CorNaiveWT<-CorAll[rownames(CorAll) %in% c("Perivascular.macrophages"),]
+SigNaiveWT<-SigAll[rownames(CorAll) %in% c("Perivascular.macrophages"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="FUSWT",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+SigAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$P)
+Type<-TaxDef[rownames(CorAll),]
+CorFUSWT<-CorAll[rownames(CorAll) %in% c("Perivascular.macrophages"),]
+SigFUSWT<-SigAll[rownames(CorAll) %in% c("Perivascular.macrophages"),]
+
+Matrix<-brain.merge@meta.data[brain.merge$orig.ident=="FUS3xtg",rownames(TaxDef)]
+CorAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$r)
+SigAll<-as.data.frame(Hmisc::rcorr(as.matrix(Matrix))$P)
+Type<-TaxDef[rownames(CorAll),]
+CorFUSAD<-CorAll[rownames(CorAll) %in% c("Perivascular.macrophages"),]
+SigFUSAD<-SigAll[rownames(CorAll) %in% c("Perivascular.macrophages"),]
+
+FullCor<-as.data.frame(rbind(CorNaiveWT,CorFUSWT,CorNaiveAD,CorFUSAD))
+rownames(FullCor)<-c("WT Naive","WT FUS-BBBO","AD Naive","AD FUS-BBBO")
+Treatment<-grepl("Naive",rownames(FullCor))
+library(pander)
+
+
+A<-str_replace(str_replace(add.significance.stars(SigNaiveWT),' ',''),'NA','')
+B<-str_replace(str_replace(add.significance.stars(SigFUSWT),' ',''),'NA','')
+C<-str_replace(str_replace(add.significance.stars(SigNaiveAD),' ',''),'NA','')
+D<-str_replace(str_replace(add.significance.stars(SigFUSAD),' ',''),'NA','')
+FullSig<-rbind(A,B,C,D)
+FullSig[is.na(FullSig)]<-''
+
+top=columnAnnotation(
+  Genotype=anno_block(gp = gpar(fill = c("white","white")),
+                      labels = c("WT", "AD"),
+                      labels_gp = gpar(fontsize=8),
+                      height = unit(4,"mm")),
+  Treatment=anno_text(x = c("Naive","FUS-\nBBBO","Naive","FUS-\nBBBO"),
+                      which = "column",
+                      rot=0,just = "center",location = 0.5,
+                      height = unit(8,"mm"),
+                      gp = gpar(fontsize=8,fill=c("white",ColorsGroup[3],"white",ColorsGroup[3]),
+                                border="black")))
+                                         
+TypeSub<-TaxDef[!(TaxDef$TaxonomyRank2=="Immune cells"),]
+FullCor<-as.matrix(FullCor[,colnames(FullCor) %in% rownames(TypeSub)])
+
+TypeSub<-TypeSub[colnames(FullCor),]
+TypeSub$TaxonomyRank2<-recode(TypeSub$TaxonomyRank2,
+  "Vascular cells"="Vascular")
+
+ht_opt$DENDROGRAM_PADDING = unit(7.5, "mm")
+
+HM<-Heatmap(t(FullCor),
+  cluster_rows = TRUE,
+  cluster_columns = FALSE,
+  cluster_row_slices = FALSE,
+  cluster_column_slices = FALSE,
+  show_row_names = TRUE,
+  show_column_names = FALSE,
+  top_annotation = top,
+  row_dend_side = "left",
+  row_title_side = "right",
+  row_title_gp = gpar(fontsize=8,family="Arial"),
+  column_title = NULL,
+  column_title_gp=gpar(fontsize=8,family="Arial"),
+  row_names_side = "left",
+  width = ncol(t(FullCor))*unit(1,"cm"),
+  column_split = c(rep("A",2),rep("B",2)),
+  row_split = TypeSub$AKTax,
+  col=viridis(1000,option="A"),
+  name = " ", 
+  heatmap_legend_param = list(title=NULL,labels_gp=gpar(fontsize=6),direction="horizontal"),
+  row_names_gp = gpar(fontsize=6,family="Arial"),
+  cell_fun = function(j, i, x, y, width, height, fill) {
+  grid.text(t(as.matrix(FullSig))[i, j], x, y, gp = gpar(fontsize = 8,col="white"))})
+```
+
+
+# CAM visplot
+```{r}
+brain.merge$CAM<-brain.merge$Perivascular.macrophages
+Vis<-AK_SpatialPl(brain.merge,features="CAM",image.alpha = 0,stroke = NA,pt.size.factor = 3,ncol=1,plotnames = c("WT Naive","WT FUS-BBBO","AD Naive","AD FUS-BBBO",alpha=1),max.cutoff = 0.75)&theme(legend.position = "none",plot.title = element_text(size=10))&coord_flip()
+Vas<-AK_SpatialPl(brain.merge,features="Vascular.and.leptomeningeal.cells",image.alpha = 0,stroke = NA,pt.size.factor = 3,ncol=1,plotnames = c("WT Naive","WT FUS-BBBO","AD Naive","AD FUS-BBBO",alpha=1),max.cutoff = 4)&theme(legend.position = "none",plot.title = element_text(size=10))&coord_flip()
+```
+
+
+```{r}
+# legends for Vis plots
+t<-data.frame(x=1:10,y=1:10)
+CAMLeg<-get_legend(ggplot(t,aes(x=x,y=x,fill=x/10))+geom_point()+scale_fill_viridis(guide = "colourbar", limits = c(0,1),breaks=c(0,0.5,1),values=c(0,0.5,1),option="D")+guides(fill=guide_colorbar(title="CAM\n ",title.hjust = 0.5,direction = "horizontal",barheight = unit(1,"mm"),barwidth = unit(2.5,"cm"),title.position = "top"))+theme(legend.title = element_text(size=10)))
+
+Leg2<-get_legend(ggplot(t,aes(x=x,y=x,fill=x/10))+geom_point()+scale_fill_viridis(guide = "colourbar", limits = c(0,1),breaks=c(0,0.5,1),values=c(0,0.5,1),option="D")+guides(fill=guide_colorbar(title="Vascular and\nleptomeningeal",title.hjust = 0.5,direction = "horizontal",barheight = unit(1,"mm"),barwidth = unit(2.5,"cm"),title.position = "top"))+theme(legend.title = element_text(size=10)))
+
+```
+
+
+# Validation Bar chart
+```{r}
+library(ggpubr)
+Data<-read.csv('/media/alina/Backup1/Papers/MG2.0/Data/ValidationImaging/VisiumValidation/VisiumValidation_Quant/AD_CAMofBCSFB-Table 1.csv')
+Data$Treatment<-recode(factor(Data$Group,levels=c("Naive","FB")),"FB"="FUS-BBBO")
+my_comparisons <- list(c("Naive", "FUS-BBBO"))
+col<-c(ColorsGroup[1],ColorsGroup[3])
+BPVal<-ggplot(Data,aes(x=Treatment,y=Percentage))+geom_boxplot(color="black",aes(fill=Treatment))+geom_point(shape=21,aes(fill=Treatment),color="black")+ stat_compare_means(comparisons = my_comparisons,method = "t.test",size=2,label.y = 14)+ylab("CAM (% of BCSFB)")+theme_bw()+theme(legend.position = "none")+scale_fill_manual(values=col)+theme(axis.text.x = element_text(size=8,angle=45,vjust=1,hjust=1),axis.title.x=element_blank(), axis.text.y = element_text(size=8),panel.grid = element_blank(),plot.margin = margin(0.5,0.5,0.5,0.5,"cm"))+ylim(0,15)
+```
+```{r}
+Means<-cbind(rowMeans(FullCor[,rownames(TypeSub[TypeSub$AKTax=="Neurons",])]),
+rowMeans(FullCor[,rownames(TypeSub[TypeSub$AKTax=="BBB",])]),
+rowMeans(FullCor[,rownames(TypeSub[TypeSub$AKTax=="Glia",])]),
+rowMeans(FullCor[,rownames(TypeSub[TypeSub$AKTax=="BCSFB",])]))
+colnames(Means)<-c("Neurons","BBB","Glia","BCSFB")
+Means<-t(Means)
+Max<-cbind(rowMax(FullCor[,rownames(TypeSub[TypeSub$AKTax=="Neurons",])]),
+rowMax(FullCor[,rownames(TypeSub[TypeSub$AKTax=="BBB",])]),
+rowMax(FullCor[,rownames(TypeSub[TypeSub$AKTax=="Glia",])]),
+rowMax(FullCor[,rownames(TypeSub[TypeSub$AKTax=="BCSFB",])]))
+colnames(Max)<-c("Neurons","BBB","Glia","BCSFB")
+Max<-t(Max)
+```
+
+
+```{r}
+HM_Ready<-plot_grid(grid.grabExpr(draw(HM,heatmap_legend_side="bottom")))
+Bottom<-plot_grid(ggplot()+theme_void(),BPVal,nrow=1,rel_widths = c(2.25,1),labels = c("d","e"))
+A<-plot_grid(Vis,CAMLeg,nrow=2,rel_heights = c(6,1))
+B<-plot_grid(Vas,Leg2,nrow=2,rel_heights = c(6,1))
+Project<-plot_grid(A,B,nrow=1,labels = c("b","c"))
+FullRight<-plot_grid(plot_grid(HM_Ready,Project,nrow=1,labels = c("a","")),Bottom,nrow=2,rel_heights = c(2,1),labels = c("","d"))
+
+
+ggsave("/media/alina/Backup1/Papers/MG2.0/Figures/CAM.png",width = 8.5,height =8.5,units = "in",bg="white")
+
+```
